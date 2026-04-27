@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.config import RegisterConfig
+from app.recommendations import FaultContext, recommend_fix
 
 
 @dataclass(frozen=True)
@@ -30,24 +31,26 @@ class BasicFaultDetector:
                 continue
 
             if register.normal_min is not None and value < register.normal_min:
+                context = FaultContext(name, "below_min", value)
                 events.append(
                     FaultEvent(
                         now,
                         "warning",
                         name,
                         f"{name} is below expected range: {value}",
-                        "Verify the register mapping and inspect the machine state.",
+                        recommend_fix(context),
                     )
                 )
 
             if register.normal_max is not None and value > register.normal_max:
+                context = FaultContext(name, "above_max", value)
                 events.append(
                     FaultEvent(
                         now,
                         "warning",
                         name,
                         f"{name} is above expected range: {value}",
-                        "Check for a stuck sensor, incorrect format, or register scaling issue.",
+                        recommend_fix(context),
                     )
                 )
 
@@ -65,13 +68,14 @@ class BasicFaultDetector:
             return []
 
         if package_count < previous_count:
+            context = FaultContext("package_count", "reset", package_count, previous_count)
             return [
                 FaultEvent(
                     now,
                     "info",
                     "package_count",
                     f"Package count reset from {previous_count} to {package_count}",
-                    "Confirm this was caused by a lot change or operator reset.",
+                    recommend_fix(context),
                 )
             ]
 
