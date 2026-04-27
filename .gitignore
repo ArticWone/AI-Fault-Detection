@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Runtime data
+data/
+*.log
+
+# Local imports/staging
+_incoming_zip/
+
+# Editors and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
