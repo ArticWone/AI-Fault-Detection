@@ -1,7 +1,5 @@
 # AI Fault Detection Project
 
-Generated: 2026-04-27 16:21:56.449263
-
 ## Overview
 This project is a proof-of-concept system to:
 - Monitor an industrial machine using cameras
@@ -25,8 +23,8 @@ Repository for commits/uploads:
 https://github.com/ArticWone/AI-Fault-Detection
 
 ## Current Project Status
-The current factual timeline, diagnostic summary, and OEM support questions are in:
-`README_PROJECT_STATUS.md`
+Read the current factual timeline, diagnostic summary, and OEM support questions here:
+[README_PROJECT_STATUS.md](README_PROJECT_STATUS.md)
 
 ## Known Faults and Fixes
 Known faults, symptoms, fixes we tried, and fixes that worked are tracked in:
