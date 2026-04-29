@@ -101,6 +101,11 @@ else
   echo "Warning: linux headers for $(uname -r) were not found in apt cache."
 fi
 
+PYTHON_VENV_PACKAGE="$(python3 -c 'import sys; print(f"python{sys.version_info.major}.{sys.version_info.minor}-venv")')"
+if apt-cache show "${PYTHON_VENV_PACKAGE}" >/dev/null 2>&1; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y "${PYTHON_VENV_PACKAGE}"
+fi
+
 echo "==> Enabling SSH"
 systemctl enable --now ssh
 
