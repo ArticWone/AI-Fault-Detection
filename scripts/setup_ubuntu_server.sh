@@ -113,6 +113,7 @@ echo "==> Creating runtime directories at ${DATA_ROOT}"
 install -d -m 775 -o "${PROJECT_USER}" -g "${PROJECT_USER}" \
   "${DATA_ROOT}" \
   "${DATA_ROOT}/data" \
+  "${DATA_ROOT}/hmi_snapshots" \
   "${DATA_ROOT}/logs" \
   "${DATA_ROOT}/models" \
   "${DATA_ROOT}/video"
@@ -167,6 +168,7 @@ SMI AI runtime data folder.
 
 Suggested usage:
 - data: Modbus CSV logs and event data
+- hmi_snapshots: HMI display snapshots captured through VNC
 - logs: service logs and transcripts
 - models: deployed model files
 - video: camera captures and clips

@@ -1,3 +1,4 @@
 pymodbus>=3.6,<4.0
 fastapi>=0.110,<1.0
 uvicorn[standard]>=0.27,<1.0
+vncdotool>=1.2,<2.0

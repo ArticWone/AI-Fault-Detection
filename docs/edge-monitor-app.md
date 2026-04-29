@@ -10,6 +10,7 @@ The edge monitor is a basic web app for the M715q thin client.
 - exposes JSON API endpoints
 - shows a mobile-friendly browser dashboard
 - embeds an HMI web viewer when the VNC bridge is running
+- captures HMI snapshots through VNC and exposes download links from the dashboard
 
 ## Folder Layout
 
@@ -23,6 +24,7 @@ The edge monitor is a basic web app for the M715q thin client.
 - `/api/current`: current machine status and latest sample
 - `/api/history`: recent in-memory samples
 - `/api/events`: recent detector events
+- `/api/snapshots`: saved HMI snapshots
 - `/api/config`: machine/web viewer settings
 
 ## Test With Simulated Data
@@ -61,6 +63,25 @@ Default bridge:
 - browser port: `6080`
 
 The dashboard at port `8000` embeds the noVNC page from port `6080`.
+
+## HMI Snapshots
+
+The dashboard has a Snapshot button beside the HMI display header. Browser security blocks direct screenshots of the noVNC iframe, so the backend captures from the HMI VNC server with `vncdotool`.
+
+Default snapshot folder:
+
+```text
+/srv/smi-ai/hmi_snapshots
+```
+
+The dashboard shows the latest 3 snapshots, includes a View more option, and provides download links that work from the device viewing the site.
+
+If the HMI VNC server requires a password, set it before starting the edge monitor:
+
+```bash
+export SMI_HMI_VNC_PASSWORD='password_here'
+bash scripts/start_edge_monitor.sh
+```
 
 ## First Version Limitations
 

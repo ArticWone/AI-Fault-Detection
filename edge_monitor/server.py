@@ -1,14 +1,17 @@
 import argparse
 import asyncio
+import os
+import subprocess
 from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from datetime import datetime
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse, HTMLResponse
 
 from app.config import DEFAULT_CONFIG, AppConfig
 from app.detector import BasicFaultDetector, FaultEvent
@@ -129,9 +132,94 @@ class Collector:
             await asyncio.sleep(self.config.poll_seconds)
 
 
+class HmiSnapshotStore:
+    def __init__(self, config: AppConfig, simulate: bool):
+        self.config = config
+        self.simulate = simulate
+        self.directory = self._snapshot_directory()
+        self.directory.mkdir(parents=True, exist_ok=True)
+
+    def list(self) -> list[dict[str, Any]]:
+        snapshots: list[dict[str, Any]] = []
+        for path in sorted(self.directory.glob("hmi_snapshot_*"), reverse=True):
+            if not path.is_file():
+                continue
+            snapshots.append(self._metadata(path))
+        return snapshots
+
+    def capture(self) -> dict[str, Any]:
+        timestamp = datetime.now()
+        suffix = "svg" if self.simulate else "png"
+        path = self.directory / f"hmi_snapshot_{timestamp.strftime('%Y%m%d_%H%M%S')}.{suffix}"
+
+        if self.simulate:
+            self._write_simulated_snapshot(path, timestamp)
+        else:
+            self._capture_vnc_snapshot(path)
+
+        return self._metadata(path)
+
+    def path_for(self, filename: str) -> Path:
+        if "/" in filename or "\\" in filename:
+            raise ValueError("Invalid snapshot filename")
+        path = self.directory / filename
+        if not path.exists() or not path.is_file():
+            raise FileNotFoundError(filename)
+        return path
+
+    def _capture_vnc_snapshot(self, path: Path) -> None:
+        server = f"{self.config.machine_ip}::{self.config.hmi_vnc_port}"
+        command = ["vncdotool", "-s", server]
+        password = os.environ.get("SMI_HMI_VNC_PASSWORD")
+        if password:
+            command.extend(["-p", password])
+        command.extend(["capture", str(path)])
+
+        result = subprocess.run(command, capture_output=True, text=True, timeout=20, check=False)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "HMI snapshot capture failed").strip()
+            raise RuntimeError(detail)
+
+    def _metadata(self, path: Path) -> dict[str, Any]:
+        stat = path.stat()
+        return {
+            "filename": path.name,
+            "created": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+            "size_bytes": stat.st_size,
+            "url": f"/api/snapshots/{path.name}",
+            "download_url": f"/api/snapshots/{path.name}?download=1",
+        }
+
+    def _snapshot_directory(self) -> Path:
+        root = Path(os.environ.get("SMI_AI_DATA_ROOT", "/srv/smi-ai"))
+        if not root.exists() and os.name == "nt":
+            root = Path("data")
+        return root / "hmi_snapshots"
+
+    def _write_simulated_snapshot(self, path: Path, timestamp: datetime) -> None:
+        path.write_text(
+            f"""<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" fill="#111817"/>
+  <rect x="42" y="38" width="876" height="464" rx="8" fill="#172321" stroke="#5d6f6b"/>
+  <text x="80" y="102" fill="#dfe8e6" font-family="Arial, sans-serif" font-size="38" font-weight="700">Simulated HMI Snapshot</text>
+  <text x="80" y="156" fill="#91a4a0" font-family="Arial, sans-serif" font-size="24">{timestamp.isoformat(timespec="seconds")}</text>
+  <rect x="80" y="222" width="220" height="94" rx="6" fill="#20312e" stroke="#5d6f6b"/>
+  <rect x="370" y="222" width="220" height="94" rx="6" fill="#20312e" stroke="#5d6f6b"/>
+  <rect x="660" y="222" width="220" height="94" rx="6" fill="#20312e" stroke="#5d6f6b"/>
+  <text x="110" y="280" fill="#dfe8e6" font-family="Arial, sans-serif" font-size="26">RUN</text>
+  <text x="400" y="280" fill="#dfe8e6" font-family="Arial, sans-serif" font-size="26">COUNT</text>
+  <text x="690" y="280" fill="#dfe8e6" font-family="Arial, sans-serif" font-size="26">OK</text>
+  <circle cx="848" cy="104" r="18" fill="#16804a"/>
+</svg>
+""",
+            encoding="utf-8",
+        )
+
+
 def create_app(simulate: bool = False) -> FastAPI:
     config = DEFAULT_CONFIG
     store = MachineDataStore()
+    snapshots = HmiSnapshotStore(config, simulate)
     collector = Collector(config, store, simulate)
     task: asyncio.Task[None] | None = None
 
@@ -163,6 +251,27 @@ def create_app(simulate: bool = False) -> FastAPI:
     @app.get("/api/events")
     async def events() -> list[dict[str, Any]]:
         return store.events()
+
+    @app.get("/api/snapshots")
+    async def list_snapshots() -> list[dict[str, Any]]:
+        return snapshots.list()
+
+    @app.post("/api/snapshots")
+    async def capture_snapshot() -> dict[str, Any]:
+        try:
+            return await asyncio.to_thread(snapshots.capture)
+        except Exception as error:
+            raise HTTPException(status_code=500, detail=str(error)) from error
+
+    @app.get("/api/snapshots/{filename}")
+    async def get_snapshot(filename: str, download: bool = False) -> FileResponse:
+        try:
+            path = snapshots.path_for(filename)
+        except (ValueError, FileNotFoundError) as error:
+            raise HTTPException(status_code=404, detail="Snapshot not found") from error
+
+        media_type = "image/svg+xml" if path.suffix == ".svg" else "image/png"
+        return FileResponse(path, media_type=media_type, filename=path.name if download else None)
 
     @app.get("/api/config")
     async def app_config() -> dict[str, Any]:
@@ -320,13 +429,39 @@ DASHBOARD_HTML = """<!doctype html>
     .section-header {
       display: flex;
       justify-content: space-between;
-      align-items: baseline;
+      align-items: center;
       gap: 12px;
       margin-top: 4px;
+    }
+    .section-actions {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
     }
     .section-note {
       color: var(--muted);
       font-size: 13px;
+    }
+    button {
+      appearance: none;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      background: var(--accent);
+      color: #ffffff;
+      cursor: pointer;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      min-height: 36px;
+      padding: 8px 12px;
+    }
+    button.secondary {
+      background: var(--panel);
+      color: var(--accent);
+    }
+    button:disabled {
+      cursor: wait;
+      opacity: 0.65;
     }
     .viewer {
       width: 100%;
@@ -354,6 +489,7 @@ DASHBOARD_HTML = """<!doctype html>
       border-radius: 8px;
       background: var(--panel);
       box-shadow: var(--shadow);
+      margin-bottom: 18px;
     }
     table {
       width: 100%;
@@ -395,11 +531,59 @@ DASHBOARD_HTML = """<!doctype html>
       font-weight: 700;
     }
     .muted { color: var(--muted); }
+    .snapshots {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .snapshot-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .snapshot-card img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      object-fit: cover;
+      background: #111817;
+      border-bottom: 1px solid var(--line);
+    }
+    .snapshot-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 10px;
+    }
+    .snapshot-time {
+      color: var(--muted);
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+    .download-link {
+      color: var(--accent);
+      font-size: 13px;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .action-message {
+      color: var(--muted);
+      font-size: 13px;
+      min-height: 18px;
+      margin: -8px 0 14px;
+    }
     @media (max-width: 640px) {
       header { align-items: flex-start; flex-direction: column; padding: 13px 14px; }
       main { padding: 14px; }
       .summary { grid-template-columns: 1fr; }
       .status { white-space: normal; }
+      .section-header { align-items: flex-start; flex-direction: column; }
+      .section-actions { width: 100%; justify-content: space-between; }
       .value { font-size: 24px; }
       th, td { font-size: 13px; padding: 8px; }
       .viewer, .viewer iframe { min-height: 360px; height: 360px; }
@@ -430,7 +614,10 @@ DASHBOARD_HTML = """<!doctype html>
     <section id="cards" class="grid"></section>
     <div class="section-header">
       <h2 class="section-title">HMI Display</h2>
-      <div class="section-note">Local VNC bridge on port 6080</div>
+      <div class="section-actions">
+        <div class="section-note">Local VNC bridge on port 6080</div>
+        <button id="snapshot-button" type="button">Snapshot</button>
+      </div>
     </div>
     <section id="hmi-viewer" class="viewer">
       <div class="viewer-empty">Start the HMI web viewer to show the machine display here.</div>
@@ -447,17 +634,30 @@ DASHBOARD_HTML = """<!doctype html>
         <tbody id="events"><tr><td colspan="5" class="muted">No events yet</td></tr></tbody>
       </table>
     </div>
+    <div class="section-header">
+      <h2 class="section-title">HMI Snapshots</h2>
+      <button id="view-more-snapshots" class="secondary" type="button" hidden>View more</button>
+    </div>
+    <div id="snapshot-message" class="action-message"></div>
+    <section id="snapshots" class="snapshots">
+      <article class="card"><div class="label">No snapshots yet</div><div class="muted">Use the Snapshot button above.</div></article>
+    </section>
   </main>
   <script>
     const cards = document.getElementById("cards");
     const status = document.getElementById("status");
     const eventsBody = document.getElementById("events");
     const hmiViewer = document.getElementById("hmi-viewer");
+    const snapshotButton = document.getElementById("snapshot-button");
+    const snapshotMessage = document.getElementById("snapshot-message");
+    const snapshotsEl = document.getElementById("snapshots");
+    const viewMoreSnapshots = document.getElementById("view-more-snapshots");
     const sampleSummary = document.getElementById("sample-summary");
     const sampleMeta = document.getElementById("sample-meta");
     const sourceSummary = document.getElementById("source-summary");
     const sourceMeta = document.getElementById("source-meta");
     let hmiLoaded = false;
+    let showAllSnapshots = false;
 
     function formatName(name) {
       return name.replaceAll("_", " ");
@@ -524,27 +724,76 @@ DASHBOARD_HTML = """<!doctype html>
       hmiLoaded = true;
     }
 
+    function renderSnapshots(snapshots) {
+      const visible = showAllSnapshots ? snapshots : snapshots.slice(0, 3);
+      viewMoreSnapshots.hidden = snapshots.length <= 3;
+      viewMoreSnapshots.textContent = showAllSnapshots ? "Show latest 3" : `View more (${snapshots.length})`;
+      snapshotsEl.innerHTML = visible.length
+        ? visible.map(snapshot => `
+          <article class="snapshot-card">
+            <a href="${snapshot.url}" target="_blank" rel="noreferrer"><img src="${snapshot.url}" alt="HMI snapshot from ${snapshot.created}"></a>
+            <div class="snapshot-meta">
+              <div class="snapshot-time">${snapshot.created}</div>
+              <a class="download-link" href="${snapshot.download_url}" download>Download</a>
+            </div>
+          </article>
+        `).join("")
+        : `<article class="card"><div class="label">No snapshots yet</div><div class="muted">Use the Snapshot button above.</div></article>`;
+    }
+
+    async function refreshSnapshots() {
+      const response = await fetch("/api/snapshots");
+      const snapshots = await response.json();
+      renderSnapshots(snapshots);
+    }
+
+    async function captureSnapshot() {
+      snapshotButton.disabled = true;
+      snapshotMessage.textContent = "Capturing HMI snapshot...";
+      try {
+        const response = await fetch("/api/snapshots", { method: "POST" });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: "Snapshot failed" }));
+          throw new Error(error.detail || "Snapshot failed");
+        }
+        await refreshSnapshots();
+        snapshotMessage.textContent = "Snapshot saved.";
+      } catch (error) {
+        snapshotMessage.textContent = error.message;
+      } finally {
+        snapshotButton.disabled = false;
+      }
+    }
+
     async function refresh() {
       try {
-        const [currentResponse, eventsResponse, configResponse] = await Promise.all([
+        const [currentResponse, eventsResponse, configResponse, snapshotsResponse] = await Promise.all([
           fetch("/api/current"),
           fetch("/api/events"),
-          fetch("/api/config")
+          fetch("/api/config"),
+          fetch("/api/snapshots")
         ]);
         const current = await currentResponse.json();
         const events = await eventsResponse.json();
         const config = await configResponse.json();
+        const snapshots = await snapshotsResponse.json();
         renderCards(current.sample);
         renderStatus(current);
         renderSampleSummary(current.sample);
         renderEvents(events);
         renderHmi(config);
+        renderSnapshots(snapshots);
       } catch (error) {
         status.className = "status";
         status.innerHTML = `<span class="dot"></span><span>Dashboard error</span>`;
       }
     }
 
+    snapshotButton.addEventListener("click", captureSnapshot);
+    viewMoreSnapshots.addEventListener("click", () => {
+      showAllSnapshots = !showAllSnapshots;
+      refreshSnapshots();
+    });
     refresh();
     setInterval(refresh, 2000);
   </script>
