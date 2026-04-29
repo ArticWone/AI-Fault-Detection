@@ -13,6 +13,15 @@ This branch combines the M715q edge-box handoff with the current SMI diagnostic 
   - I/O map starter
   - Machine export summaries
   - Focused BAR SAFETY / Modbus correlation notes
+- `origin/codex/full-data-upload-2026-04-29`
+  - Raw live-output runs
+  - Machine exports
+  - VNC screenshots
+  - Manual renders
+  - Photos, videos, and contact sheets
+- `origin/known-faults-and-fixes`
+  - Known-faults log
+  - First-pass recommendation table used by the rule-based detector
 
 ## Start Here Tomorrow
 
@@ -24,6 +33,7 @@ This branch combines the M715q edge-box handoff with the current SMI diagnostic 
    - `data/live_outputs/20260429/131837/stop_sequence_132135_132220_summary.md`
    - `data/live_outputs/20260429/131837/bad_packs_132457_summary.md`
 4. For M715q state, review `m715q_runtime_handoff_2026-04-29/`.
+5. For the beginning of repeatable fixes, review `docs/known-faults-and-fixes.md`.
 
 ## Current Diagnostic Direction
 
@@ -48,3 +58,7 @@ The password-protected archive is:
 ```text
 C:\Users\Jared\Desktop\SMI_AI_secure_handoff_2026-04-29.7z
 ```
+
+## Duplicate Handling
+
+The full-data upload intentionally preserves raw run folders. Some run folders contain byte-identical `run.log` and `stdout.log` files, empty `stderr.log` placeholders, and repeated one-line CSV headers. These are retained as original capture artifacts, not treated as accidental branch duplicates.
