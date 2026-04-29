@@ -66,7 +66,9 @@ Keep this local-network only and monitor-first. Machine control from a phone/app
 The Ubuntu setup script installs:
 - `ca-certificates`
 - `curl`
+- `build-essential`
 - `dkms`
+- `efibootmgr`
 - `ffmpeg`
 - `git`
 - `gnupg`
@@ -77,6 +79,7 @@ The Ubuntu setup script installs:
 - `lsb-release`
 - `net-tools`
 - `nmap`
+- `nvme-cli`
 - `openssh-server`
 - `pciutils`
 - `pkg-config`
@@ -85,6 +88,7 @@ The Ubuntu setup script installs:
 - `python3-pip`
 - `python3-venv`
 - `rsync`
+- `smartmontools`
 - `software-properties-common`
 - `unzip`
 - `usbutils`

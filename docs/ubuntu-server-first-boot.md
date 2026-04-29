@@ -65,6 +65,13 @@ Check disks:
 lsblk
 ```
 
+Run the project first-boot hardware check:
+
+```bash
+cd ~/AI-Fault-Detection
+bash scripts/first_boot_check.sh
+```
+
 Check Codex:
 
 ```bash

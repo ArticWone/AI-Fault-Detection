@@ -9,6 +9,13 @@ env/
 data/
 *.log
 
+# Local hardware captures may include MAC addresses, UUIDs, license IDs, or serials
+hardware_captures/*
+!hardware_captures/README.md
+
+# Local SSH keys for lab machines
+.local_ssh/
+
 # Local imports/staging
 _incoming_zip/
 

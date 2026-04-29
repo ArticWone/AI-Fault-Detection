@@ -67,7 +67,9 @@ echo "==> Installing base packages"
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
   ca-certificates \
   curl \
+  build-essential \
   dkms \
+  efibootmgr \
   ffmpeg \
   git \
   gnupg \
@@ -78,6 +80,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   lsb-release \
   net-tools \
   nmap \
+  nvme-cli \
   openssh-server \
   pciutils \
   pkg-config \
@@ -86,6 +89,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
   python3-pip \
   python3-venv \
   rsync \
+  smartmontools \
   software-properties-common \
   unzip \
   usbutils \
