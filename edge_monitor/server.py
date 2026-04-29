@@ -531,39 +531,6 @@ DASHBOARD_HTML = """<!doctype html>
       font-weight: 700;
     }
     .muted { color: var(--muted); }
-    .snapshots {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-      gap: 12px;
-      margin-bottom: 18px;
-    }
-    .snapshot-card {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      box-shadow: var(--shadow);
-      overflow: hidden;
-    }
-    .snapshot-card img {
-      display: block;
-      width: 100%;
-      aspect-ratio: 16 / 9;
-      object-fit: cover;
-      background: #111817;
-      border-bottom: 1px solid var(--line);
-    }
-    .snapshot-meta {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      padding: 10px;
-    }
-    .snapshot-time {
-      color: var(--muted);
-      font-size: 13px;
-      overflow-wrap: anywhere;
-    }
     .download-link {
       color: var(--accent);
       font-size: 13px;
@@ -639,9 +606,14 @@ DASHBOARD_HTML = """<!doctype html>
       <button id="view-more-snapshots" class="secondary" type="button" hidden>View more</button>
     </div>
     <div id="snapshot-message" class="action-message"></div>
-    <section id="snapshots" class="snapshots">
-      <article class="card"><div class="label">No snapshots yet</div><div class="muted">Use the Snapshot button above.</div></article>
-    </section>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>File</th><th>Size</th><th>Action</th></tr>
+        </thead>
+        <tbody id="snapshots"><tr><td colspan="4" class="muted">No snapshots yet</td></tr></tbody>
+      </table>
+    </div>
   </main>
   <script>
     const cards = document.getElementById("cards");
@@ -730,15 +702,14 @@ DASHBOARD_HTML = """<!doctype html>
       viewMoreSnapshots.textContent = showAllSnapshots ? "Show latest 3" : `View more (${snapshots.length})`;
       snapshotsEl.innerHTML = visible.length
         ? visible.map(snapshot => `
-          <article class="snapshot-card">
-            <a href="${snapshot.url}" target="_blank" rel="noreferrer"><img src="${snapshot.url}" alt="HMI snapshot from ${snapshot.created}"></a>
-            <div class="snapshot-meta">
-              <div class="snapshot-time">${snapshot.created}</div>
-              <a class="download-link" href="${snapshot.download_url}" download>Download</a>
-            </div>
-          </article>
+          <tr>
+            <td>${snapshot.created}</td>
+            <td>${snapshot.filename}</td>
+            <td>${Math.round(snapshot.size_bytes / 1024)} KB</td>
+            <td><a class="download-link" href="${snapshot.download_url}" download>Download</a></td>
+          </tr>
         `).join("")
-        : `<article class="card"><div class="label">No snapshots yet</div><div class="muted">Use the Snapshot button above.</div></article>`;
+        : `<tr><td colspan="4" class="muted">No snapshots yet</td></tr>`;
     }
 
     async function refreshSnapshots() {
