@@ -9,6 +9,8 @@ This project is a proof-of-concept system to:
 - Read machine data via Modbus TCP
 - Provide alerts and recommendations
 
+The first version uses simple rule-based detection and recommendation logic. As real fault codes are identified, the recommendation table can be expanded with machine-specific fixes.
+
 ## Development Approach
 This workstation is for thinking, planning, documentation, lightweight code edits, and small simulated tests only.
 
@@ -21,6 +23,14 @@ Heavy workloads should run on the home system, including:
 
 Repository for commits/uploads:
 https://github.com/ArticWone/AI-Fault-Detection
+
+## Current Project Status
+The current factual timeline, diagnostic summary, and OEM support questions are in:
+`README_PROJECT_STATUS.md`
+
+## Known Faults and Fixes
+Known faults, symptoms, fixes we tried, and fixes that worked are tracked in:
+`docs/known-faults-and-fixes.md`
 
 ## Key Findings
 - Machine: SMIPACK BP802ALV
