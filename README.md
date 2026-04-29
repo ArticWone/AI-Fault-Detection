@@ -22,8 +22,7 @@ Heavy workloads should run on the home system, including:
 Repository for commits/uploads:
 https://github.com/ArticWone/AI-Fault-Detection
 
-## Current Project Status
-Read the current factual timeline, diagnostic summary, and OEM support questions here:
+## Current Status
 [README_PROJECT_STATUS.md](README_PROJECT_STATUS.md)
 
 ## Known Faults and Fixes
