@@ -1,0 +1,27 @@
+Cloning into '/home/user/AI-Fault-Detection/tools/noVNC'...
+Cloning into '/home/user/AI-Fault-Detection/tools/noVNC/utils/websockify'...
+Starting HMI web viewer
+  HMI VNC: 192.168.0.1:5900
+  Browser: http://192.168.8.197:6080/vnc.html?autoconnect=1&resize=remote&reconnect=1
+
+Warning: could not find self.pem
+Using local websockify at /home/user/AI-Fault-Detection/tools/noVNC/utils/websockify/run
+Starting webserver and WebSockets proxy on port 6080
+/home/user/AI-Fault-Detection/tools/noVNC/utils/websockify/websockify/websocket.py:31: UserWarning: no 'numpy' module, HyBi protocol will be slower
+  warnings.warn("no 'numpy' module, HyBi protocol will be slower")
+WebSocket server settings:
+  - Listen on :6080
+  - Web server. Web root: /home/user/AI-Fault-Detection/tools/noVNC
+  - No SSL/TLS support (no cert file)
+  - proxying from :6080 to 192.168.0.1:5900
+
+
+Navigate to this URL:
+
+    http://smi-whonot-brain:6080/vnc.html
+
+Press Ctrl-C to exit
+
+
+/home/user/AI-Fault-Detection/tools/noVNC/utils/websockify/websockify/websocket.py:31: UserWarning: no 'numpy' module, HyBi protocol will be slower
+  warnings.warn("no 'numpy' module, HyBi protocol will be slower")

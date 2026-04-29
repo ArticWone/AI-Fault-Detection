@@ -1,0 +1,3 @@
+Use m715q_codex_export.json as the source of truth for this node.
+Keep Ubuntu Server lean: no featured snaps, GPT disk, UEFI boot, Secure Boot disabled.
+Generate or update setup scripts to install the repo dependencies, validate UEFI boot, and collect first-boot hardware telemetry.

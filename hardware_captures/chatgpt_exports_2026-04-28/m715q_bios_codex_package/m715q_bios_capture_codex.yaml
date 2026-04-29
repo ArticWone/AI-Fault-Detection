@@ -1,0 +1,202 @@
+package_name: lenovo_m715q_bios_capture
+schema_version: 1.0.0
+capture_metadata:
+  capture_type: manual_bios_image_capture
+  capture_source: Lenovo BIOS Setup Utility
+  device_role: machine_learning_mapping_node_proof_of_concept
+  created_utc: '2026-04-29T01:42:26Z'
+  completeness: high_partial_deeper_submenus_not_fully_expanded
+  notes:
+  - Data parsed from user-provided BIOS screen photos.
+  - Some nested pages such as detailed boot sequences, TPM/TCG setup, Secure Boot
+    setup, and automatic power-on details were visible as available but not expanded.
+  - Use this as static BIOS/firmware baseline for later comparison with OS/runtime
+    telemetry.
+system:
+  manufacturer: Lenovo
+  brand_family: ThinkCentre
+  model: M715q
+  machine_type_model: MJ08GJQ8
+  platform: AMD Bristol Ridge
+  system_uuid: 9FFFFD00-5153-11E9-A570-AD2D0E843900
+  ethernet_mac_address: 6C:4B:90:5D:CE:24
+  asset_tag: null
+  serial_number_visibility: not_captured_or_not_shown
+firmware:
+  bios_vendor: Lenovo
+  bios_revision_level: M11KT56A
+  bios_date: '2022-12-16'
+  boot_block_revision_level: '1.56'
+  embedded_controller_version: M11CT11A
+  language: English
+licensing:
+  preinstalled_os_license: SDK0J40697 WIN
+  oa3_license_key_id: '3305182968900'
+  oa2_1_marker: Y
+hardware:
+  cpu:
+    type: AMD PRO A12-9800E
+    description: R7, 12 compute cores, 4C+8G
+    speed_ghz: 3.1
+    core_count: 4
+    module_version: BristolCPU 08
+    agesa_version: BristolPI 1.3.0.C
+    c6_state: Enabled
+  memory:
+    installed_mb: 16384
+    bus_speed_mhz: 2400
+  video:
+    active_video: IGD
+    uma_frame_buffer_size: Auto
+  audio:
+    onboard_audio: Enabled
+  network_adapter:
+    onboard_ethernet: Enabled
+    onboard_ethernet_controller: Enabled
+  fan:
+    cpu_fan: Operating
+  storage:
+    m2_drive_1:
+      detected: true
+      model: WDC PC SN730 SDBQNTY-256G-1001
+      capacity_gb_inferred: 256
+      interface: NVMe/M.2
+    sata_drive_1:
+      detected: false
+      value: None
+    sata_controller: Enabled
+    sata_drive_1_port: Enabled
+    configure_sata_as: AHCI
+    hard_disk_pre_delay: Disabled
+bios_structure:
+  main:
+    system_summary:
+      captured: true
+    system_time_and_date:
+      captured: false
+  devices:
+    usb_setup:
+      usb_support: Enabled
+      usb_legacy_support: Enabled
+      usb_debug_support: Disabled
+      front_usb_ports: Enabled
+      usb_port_1: Enabled
+      usb_port_2: Enabled
+      rear_usb_ports: Enabled
+      usb_port_3: Enabled
+      usb_port_4: Enabled
+      usb_port_5: Enabled
+      usb_port_6: Enabled
+    ata_drive_setup:
+      sata_controller: Enabled
+      sata_drive_1: Enabled
+      configure_sata_as: AHCI
+      hard_disk_pre_delay: Disabled
+    video_setup:
+      uma_frame_buffer_size: Auto
+    network_setup:
+      onboard_ethernet_controller: Enabled
+      pxe_option_rom: Enabled
+      pxe_ipv4_network_stack: Enabled
+      pxe_ipv6_network_stack: Enabled
+  advanced:
+    cpu_setup:
+      module_version: BristolCPU 08
+      agesa_version: BristolPI 1.3.0.C
+      c6: Enabled
+    dash_configuration:
+      dash_support: Disabled
+      console_redirection_terminal_type: VT100+
+    dust_shield_alert: Disabled
+  power:
+    after_power_loss: Last State
+    enhanced_power_saving_mode: Disabled
+    smart_power_on: Enabled
+    intelligent_cooling_engine:
+      ice_performance_modes: Better Thermal Performance
+      ice_thermal_alert: Enabled
+    automatic_power_on:
+      available: true
+      expanded: false
+  security:
+    administrator_password: Not Installed
+    power_on_password: Not Installed
+    set_administrator_password: Available
+    set_power_on_password: Available
+    allow_flashing_bios_to_previous_version: 'Yes'
+    require_admin_password_when_flashing: 'No'
+    windows_uefi_firmware_update: Enabled
+    require_pop_on_system_boot: 'Yes'
+    require_pop_on_restart: 'No'
+    require_admin_password_for_f12_boot: 'No'
+    smart_usb_protection: Disabled
+    hard_disk_password:
+      available: true
+      expanded: false
+    fingerprint_setup:
+      available: true
+      expanded: false
+    tcg_feature_setup:
+      available: true
+      expanded: false
+    system_event_log:
+      available: true
+      expanded: false
+    secure_boot:
+      available: true
+      expanded: false
+    network_offline_locker_setup:
+      available: true
+      expanded: false
+    device_guard: Disabled
+    chassis_intrusion_detection: Disabled
+  startup:
+    primary_boot_sequence:
+      available: true
+      expanded: false
+    automatic_boot_sequence:
+      available: true
+      expanded: false
+    error_boot_sequence:
+      available: true
+      expanded: false
+    csm: Enabled
+    boot_mode: UEFI Only
+    boot_up_num_lock_status: 'On'
+    keyboardless_operation: Enabled
+    startup_device_menu_prompt: Enabled
+  exit:
+    save_changes_and_exit: Available
+    discard_changes_and_exit: Available
+    load_optimal_defaults: Available
+    os_optimized_defaults: Enabled
+ml_mapping_features:
+  static_feature_groups:
+  - identity
+  - firmware_versions
+  - cpu_memory_video
+  - storage_topology
+  - usb_port_state
+  - network_pxe_state
+  - power_recovery_state
+  - thermal_policy
+  - security_posture
+  - boot_mode
+  important_flags:
+    uefi_only_with_csm_enabled: true
+    pxe_ipv4_ipv6_enabled: true
+    nvme_only_currently_detected: true
+    no_bios_passwords_installed: true
+    thermal_policy_performance_biased: true
+    after_power_loss_last_state: true
+  recommended_runtime_pairing:
+  - lscpu
+  - lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINT,MODEL,SERIAL
+  - lspci -nn
+  - lsusb
+  - ip addr
+  - sensors
+  - dmesg -T
+  - journalctl -b
+  - smartctl -a for each disk
+  - nvme smart-log for NVMe drives
