@@ -14,6 +14,8 @@ class RegisterConfig:
 class AppConfig:
     machine_ip: str = "192.168.0.1"
     machine_port: int = 502
+    hmi_vnc_port: int = 5900
+    hmi_web_port: int = 6080
     poll_seconds: float = 2.0
     unit_id: int = 1
     event_log_path: str = "data/events.csv"
