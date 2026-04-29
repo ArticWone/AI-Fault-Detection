@@ -92,6 +92,23 @@ Then open:
 http://SERVER_IP:8000
 ```
 
+## Temporary Debug Sudo
+
+During setup/debug, the M715q may temporarily allow passwordless sudo for the `user` account through:
+
+```text
+/etc/sudoers.d/90-smi-ai-setup
+```
+
+This is convenient while installing packages and configuring services over SSH, but it should not remain enabled in the final deployment.
+
+Remove before final setup/signoff:
+
+```bash
+sudo rm /etc/sudoers.d/90-smi-ai-setup
+sudo -k
+```
+
 Check Coral after the module is installed:
 
 ```bash

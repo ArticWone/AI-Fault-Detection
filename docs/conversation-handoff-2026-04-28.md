@@ -129,6 +129,19 @@ Open:
 http://SERVER_IP:8000
 ```
 
+## Temporary Debug Access
+
+Passwordless sudo for the `user` account may be enabled during setup/debug so Codex can install packages and configure services over SSH.
+
+Final deployment cleanup:
+
+```bash
+sudo rm /etc/sudoers.d/90-smi-ai-setup
+sudo -k
+```
+
+Do not leave passwordless sudo enabled for the final machine setup unless there is a deliberate operational reason and compensating access controls.
+
 Start the HMI web viewer:
 
 ```bash
