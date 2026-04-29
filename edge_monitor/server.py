@@ -189,19 +189,22 @@ DASHBOARD_HTML = """<!doctype html>
   <style>
     :root {
       color-scheme: light;
-      --bg: #f4f7f6;
+      --bg: #eef2f3;
       --panel: #ffffff;
-      --ink: #1c2524;
-      --muted: #687674;
-      --line: #d9e1df;
-      --ok: #127a46;
-      --bad: #b42318;
-      --accent: #176b87;
+      --panel-soft: #f8faf9;
+      --ink: #172321;
+      --muted: #66736f;
+      --line: #d8e0de;
+      --ok: #16804a;
+      --bad: #b8322a;
+      --warn: #a05d00;
+      --accent: #1e6b7d;
+      --shadow: 0 1px 2px rgba(16, 24, 40, 0.07);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       background: var(--bg);
       color: var(--ink);
     }
@@ -210,22 +213,38 @@ DASHBOARD_HTML = """<!doctype html>
       justify-content: space-between;
       align-items: center;
       gap: 16px;
-      padding: 18px 22px;
+      padding: 14px 22px;
       border-bottom: 1px solid var(--line);
       background: var(--panel);
+      box-shadow: var(--shadow);
+      position: sticky;
+      top: 0;
+      z-index: 10;
     }
-    h1 { margin: 0; font-size: 22px; }
+    h1 { margin: 0; font-size: 20px; line-height: 1.2; }
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 3px;
+    }
     main {
-      width: min(1180px, 100%);
+      width: min(1240px, 100%);
       margin: 0 auto;
-      padding: 18px;
+      padding: 18px 18px 28px;
     }
     .status {
       display: inline-flex;
       align-items: center;
       gap: 8px;
+      min-height: 34px;
+      padding: 7px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel-soft);
       font-weight: 700;
+      font-size: 13px;
       color: var(--muted);
+      white-space: nowrap;
     }
     .dot {
       width: 10px;
@@ -234,9 +253,41 @@ DASHBOARD_HTML = """<!doctype html>
       background: var(--bad);
     }
     .connected .dot { background: var(--ok); }
+    .summary {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 14px;
+      align-items: stretch;
+      margin-bottom: 16px;
+    }
+    .summary-panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      box-shadow: var(--shadow);
+    }
+    .summary-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    .summary-value {
+      font-size: 24px;
+      font-weight: 750;
+      overflow-wrap: anywhere;
+    }
+    .summary-meta {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 7px;
+    }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       gap: 12px;
       margin-bottom: 18px;
     }
@@ -244,30 +295,48 @@ DASHBOARD_HTML = """<!doctype html>
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 14px;
+      padding: 13px;
+      box-shadow: var(--shadow);
     }
     .label {
       color: var(--muted);
-      font-size: 13px;
-      margin-bottom: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      margin-bottom: 7px;
+      text-transform: uppercase;
     }
     .value {
-      font-size: 30px;
+      font-size: 28px;
       font-weight: 700;
       overflow-wrap: anywhere;
+      line-height: 1.05;
     }
     .section-title {
       margin: 8px 0 10px;
       font-size: 17px;
+      line-height: 1.2;
+    }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-top: 4px;
+    }
+    .section-note {
+      color: var(--muted);
+      font-size: 13px;
     }
     .viewer {
       width: 100%;
       min-height: 540px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: var(--panel);
+      background: #111817;
       overflow: hidden;
       margin-bottom: 18px;
+      box-shadow: var(--shadow);
     }
     .viewer iframe {
       display: block;
@@ -277,15 +346,19 @@ DASHBOARD_HTML = """<!doctype html>
     }
     .viewer-empty {
       padding: 16px;
-      color: var(--muted);
+      color: #c9d2d0;
+    }
+    .table-wrap {
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
     }
     table {
       width: 100%;
       border-collapse: collapse;
       background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      overflow: hidden;
     }
     th, td {
       padding: 10px;
@@ -294,15 +367,39 @@ DASHBOARD_HTML = """<!doctype html>
       font-size: 14px;
       vertical-align: top;
     }
-    th { color: var(--muted); font-weight: 700; }
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      background: var(--panel-soft);
+    }
+    tbody tr:hover { background: #fbfcfc; }
     tr:last-child td { border-bottom: none; }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 3px 8px;
+      background: #edf5f1;
+      color: var(--ok);
+      font-weight: 700;
+      font-size: 12px;
+      text-transform: capitalize;
+    }
+    .badge.warning { background: #fff6e5; color: var(--warn); }
+    .badge.error { background: #fdeceb; color: var(--bad); }
     .error {
       color: var(--bad);
       font-weight: 700;
     }
     .muted { color: var(--muted); }
     @media (max-width: 640px) {
-      header { align-items: flex-start; flex-direction: column; }
+      header { align-items: flex-start; flex-direction: column; padding: 13px 14px; }
+      main { padding: 14px; }
+      .summary { grid-template-columns: 1fr; }
+      .status { white-space: normal; }
       .value { font-size: 24px; }
       th, td { font-size: 13px; padding: 8px; }
       .viewer, .viewer iframe { min-height: 360px; height: 360px; }
@@ -311,29 +408,60 @@ DASHBOARD_HTML = """<!doctype html>
 </head>
 <body>
   <header>
-    <h1>SMI AI Machine Monitor</h1>
+    <div>
+      <h1>SMI AI Machine Monitor</h1>
+      <div class="subtitle">Thin-client data collection and HMI view</div>
+    </div>
     <div id="status" class="status"><span class="dot"></span><span>Starting</span></div>
   </header>
   <main>
+    <section class="summary">
+      <article class="summary-panel">
+        <div class="summary-title">Latest sample</div>
+        <div id="sample-summary" class="summary-value">Waiting for data</div>
+        <div id="sample-meta" class="summary-meta">No samples received yet</div>
+      </article>
+      <article class="summary-panel">
+        <div class="summary-title">Machine source</div>
+        <div id="source-summary" class="summary-value">--</div>
+        <div id="source-meta" class="summary-meta">Polling status</div>
+      </article>
+    </section>
     <section id="cards" class="grid"></section>
-    <h2 class="section-title">HMI Display</h2>
+    <div class="section-header">
+      <h2 class="section-title">HMI Display</h2>
+      <div class="section-note">Local VNC bridge on port 6080</div>
+    </div>
     <section id="hmi-viewer" class="viewer">
       <div class="viewer-empty">Start the HMI web viewer to show the machine display here.</div>
     </section>
-    <h2 class="section-title">Recent Events</h2>
-    <table>
-      <thead>
-        <tr><th>Time</th><th>Severity</th><th>Source</th><th>Message</th><th>Recommendation</th></tr>
-      </thead>
-      <tbody id="events"><tr><td colspan="5" class="muted">No events yet</td></tr></tbody>
-    </table>
+    <div class="section-header">
+      <h2 class="section-title">Recent Events</h2>
+      <div class="section-note">Newest first</div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Severity</th><th>Source</th><th>Message</th><th>Recommendation</th></tr>
+        </thead>
+        <tbody id="events"><tr><td colspan="5" class="muted">No events yet</td></tr></tbody>
+      </table>
+    </div>
   </main>
   <script>
     const cards = document.getElementById("cards");
     const status = document.getElementById("status");
     const eventsBody = document.getElementById("events");
     const hmiViewer = document.getElementById("hmi-viewer");
+    const sampleSummary = document.getElementById("sample-summary");
+    const sampleMeta = document.getElementById("sample-meta");
+    const sourceSummary = document.getElementById("source-summary");
+    const sourceMeta = document.getElementById("source-meta");
     let hmiLoaded = false;
+
+    function formatName(name) {
+      return name.replaceAll("_", " ");
+    }
 
     function renderCards(sample) {
       const values = sample?.values || {};
@@ -341,7 +469,7 @@ DASHBOARD_HTML = """<!doctype html>
       cards.innerHTML = entries.length
         ? entries.map(([name, value]) => `
           <article class="card">
-            <div class="label">${name.replaceAll("_", " ")}</div>
+            <div class="label">${formatName(name)}</div>
             <div class="value">${value}</div>
           </article>
         `).join("")
@@ -353,10 +481,24 @@ DASHBOARD_HTML = """<!doctype html>
       status.className = connected ? "status connected" : "status";
       const last = payload.status.last_update || "no updates";
       const error = payload.status.last_error;
-      status.innerHTML = `<span class="dot"></span><span>${connected ? "Connected" : "Disconnected"} · ${payload.status.source} · ${last}</span>`;
+      status.innerHTML = `<span class="dot"></span><span>${connected ? "Connected" : "Disconnected"} - ${payload.status.source} - ${last}</span>`;
+      sourceSummary.textContent = payload.status.source || "--";
+      sourceMeta.textContent = connected ? `Last update ${last}` : (error || "Waiting for connection");
       if (error) {
         cards.insertAdjacentHTML("beforeend", `<article class="card"><div class="label">Last error</div><div class="value error">${error}</div></article>`);
       }
+    }
+
+    function renderSampleSummary(sample) {
+      if (!sample) {
+        sampleSummary.textContent = "Waiting for data";
+        sampleMeta.textContent = "No samples received yet";
+        return;
+      }
+      const count = Object.keys(sample.values || {}).length;
+      const packageCount = sample.values?.package_count;
+      sampleSummary.textContent = packageCount === undefined ? `${count} registers` : `Package ${packageCount}`;
+      sampleMeta.textContent = `${count} registers - ${sample.timestamp}`;
     }
 
     function renderEvents(events) {
@@ -365,7 +507,7 @@ DASHBOARD_HTML = """<!doctype html>
         ? recent.map(event => `
           <tr>
             <td>${event.timestamp}</td>
-            <td>${event.severity}</td>
+            <td><span class="badge ${event.severity}">${event.severity}</span></td>
             <td>${event.source}</td>
             <td>${event.message}</td>
             <td>${event.recommendation}</td>
@@ -394,6 +536,7 @@ DASHBOARD_HTML = """<!doctype html>
         const config = await configResponse.json();
         renderCards(current.sample);
         renderStatus(current);
+        renderSampleSummary(current.sample);
         renderEvents(events);
         renderHmi(config);
       } catch (error) {
