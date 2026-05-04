@@ -11,6 +11,7 @@ This book was generated from the repository documentation and current node state
 - `docs/ubuntu-server-first-boot.md`
 - `docs/machine-notes.md`
 - `docs/modbus-reference-notes.md`
+- `docs/bookstack/03-machine-data-and-faults/03-machine-map-template.md`
 - `docs/reolink-rlc-522-camera-plan.md`
 - `docs/known-faults-and-fixes.md`
 - `docs/vendor-documents.md`
