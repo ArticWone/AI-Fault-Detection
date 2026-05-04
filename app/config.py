@@ -33,6 +33,7 @@ class AppConfig:
     machine_port: int = field(default_factory=lambda: _env_int("SMI_MACHINE_PORT", 502))
     hmi_vnc_port: int = field(default_factory=lambda: _env_int("SMI_HMI_VNC_PORT", 5900))
     hmi_web_port: int = field(default_factory=lambda: _env_int("SMI_HMI_WEB_PORT", 6080))
+    machine_connect_timeout: int = field(default_factory=lambda: _env_int("SMI_MACHINE_CONNECT_TIMEOUT", 120))
     poll_seconds: float = field(default_factory=lambda: _env_float("SMI_POLL_SECONDS", 2.0))
     unit_id: int = field(default_factory=lambda: _env_int("SMI_MODBUS_UNIT_ID", 1))
     event_log_path: str = field(

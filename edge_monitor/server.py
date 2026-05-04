@@ -1,9 +1,11 @@
 import argparse
 import asyncio
+import json
 import os
 import shlex
 import subprocess
 import sys
+import time
 from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -106,11 +108,21 @@ class Collector:
             await self._run_simulated()
             return
 
+        started = time.monotonic()
+        had_connection = False
         while not self._stop.is_set():
             try:
                 with machine_client(self.config) as machine:
+                    had_connection = True
                     await self._poll_machine(machine, "modbus")
             except Exception as error:
+                elapsed = time.monotonic() - started
+                if not had_connection and elapsed >= self.config.machine_connect_timeout:
+                    error = RuntimeError(
+                        f"Machine {self.config.machine_ip}:{self.config.machine_port} did not connect "
+                        f"within {self.config.machine_connect_timeout}s. Check Ethernet, machine power, "
+                        "IP settings, and Modbus port."
+                    )
                 self.store.set_error(error, "modbus")
                 await asyncio.sleep(5)
 
@@ -432,6 +444,101 @@ def create_app(simulate: bool = False) -> FastAPI:
 
     app = FastAPI(title="SMI AI Machine Monitor", lifespan=lifespan)
 
+    def _run_command(command: list[str], timeout: int = 8) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
+
+    def _tailscale_status() -> dict[str, Any]:
+        active = _run_command(["systemctl", "is-active", "tailscaled.service"])
+        enabled = _run_command(["systemctl", "is-enabled", "tailscaled.service"])
+        ip = _run_command(["tailscale", "ip", "-4"])
+        status_json = _run_command(["tailscale", "status", "--json"])
+        details: dict[str, Any] = {}
+        if status_json.returncode == 0 and status_json.stdout.strip():
+            try:
+                parsed = json.loads(status_json.stdout)
+                self_info = parsed.get("Self", {})
+                details = {
+                    "backend_state": parsed.get("BackendState"),
+                    "hostname": self_info.get("HostName"),
+                    "dns_name": self_info.get("DNSName"),
+                    "online": self_info.get("Online"),
+                }
+            except json.JSONDecodeError:
+                details = {}
+        return {
+            "active": active.stdout.strip() == "active",
+            "enabled": enabled.stdout.strip() == "enabled",
+            "ip": ip.stdout.strip(),
+            **details,
+        }
+
+    def _service_status(service: str, port: int | None = None) -> dict[str, Any]:
+        active = _run_command(["systemctl", "is-active", service])
+        enabled = _run_command(["systemctl", "is-enabled", service])
+        status: dict[str, Any] = {
+            "service": service,
+            "active": active.stdout.strip() == "active",
+            "enabled": enabled.stdout.strip() == "enabled",
+        }
+        if port is not None:
+            sockets = _run_command(["ss", "-ltn"])
+            lines = sockets.stdout.splitlines()
+            listeners = [line for line in lines if f":{port} " in line]
+            local_addresses = [line.split()[3] for line in listeners if len(line.split()) > 3]
+            status.update(
+                {
+                    "port": port,
+                    "listening": bool(listeners),
+                    "lan_open": any(
+                        address.startswith(("192.168.0.20:", "0.0.0.0:", "*:")) for address in local_addresses
+                    ),
+                    "listeners": listeners,
+                }
+            )
+        return status
+
+    def _wifi_status() -> dict[str, Any]:
+        interface = os.environ.get("SMI_WIFI_INTERFACE", "wlx6c4cbce74d9c")
+        link = _run_command(["iw", "dev", interface, "link"])
+        ip = _run_command(["ip", "-4", "-br", "addr", "show", interface])
+        status: dict[str, Any] = {
+            "interface": interface,
+            "connected": "Connected to" in link.stdout,
+            "ssid": None,
+            "signal": None,
+            "ip": None,
+        }
+        for line in link.stdout.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("SSID:"):
+                status["ssid"] = stripped.partition(":")[2].strip()
+            elif stripped.startswith("signal:"):
+                status["signal"] = stripped.partition(":")[2].strip()
+        parts = ip.stdout.split()
+        if len(parts) >= 3:
+            status["ip"] = parts[2]
+        return status
+
+    def _wifi_scan() -> list[dict[str, Any]]:
+        interface = os.environ.get("SMI_WIFI_INTERFACE", "wlx6c4cbce74d9c")
+        result = _run_command(["sudo", "-n", "/usr/local/sbin/smi-admin-control", "wifi-scan", interface, "on"], timeout=20)
+        networks: dict[str, dict[str, Any]] = {}
+        if result.returncode != 0:
+            return []
+        current: dict[str, Any] = {}
+        for line in result.stdout.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("BSS "):
+                current = {}
+            elif stripped.startswith("SSID:"):
+                ssid = stripped.partition(":")[2].strip()
+                if ssid:
+                    current["ssid"] = ssid
+                    networks.setdefault(ssid, {"ssid": ssid, "signal": None})
+            elif stripped.startswith("signal:") and current.get("ssid"):
+                networks[current["ssid"]]["signal"] = stripped.partition(":")[2].strip()
+        return sorted(networks.values(), key=lambda item: item["ssid"].lower())
+
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
         return DASHBOARD_HTML
@@ -585,11 +692,205 @@ def create_app(simulate: bool = False) -> FastAPI:
             raise HTTPException(status_code=500, detail=str(error)) from error
         return {"status": "shutdown_requested"}
 
+    @app.get("/api/settings")
+    async def app_settings() -> dict[str, Any]:
+        return {
+            "machine_ip": config.machine_ip,
+            "machine_port": config.machine_port,
+            "machine_connect_timeout": config.machine_connect_timeout,
+            "poll_seconds": config.poll_seconds,
+            "simulate": simulate,
+            "settings_path": os.environ.get(
+                "SMI_EDGE_SETTINGS_FILE",
+                "/srv/smi-ai/config/smi-edge-monitor.env",
+            ),
+        }
+
+    @app.post("/api/settings")
+    async def save_settings(payload: dict[str, Any]) -> dict[str, str]:
+        machine_ip = str(payload.get("machine_ip", config.machine_ip)).strip()
+        machine_port = int(payload.get("machine_port", config.machine_port))
+        machine_connect_timeout = int(payload.get("machine_connect_timeout", config.machine_connect_timeout))
+        poll_seconds = float(payload.get("poll_seconds", config.poll_seconds))
+        use_simulate = bool(payload.get("simulate", simulate))
+
+        if not machine_ip or any(char not in "0123456789.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ:-" for char in machine_ip):
+            raise HTTPException(status_code=400, detail="Machine IP/host contains unsupported characters")
+        if not 1 <= machine_port <= 65535:
+            raise HTTPException(status_code=400, detail="Machine port must be between 1 and 65535")
+        if not 5 <= machine_connect_timeout <= 900:
+            raise HTTPException(status_code=400, detail="Machine timeout must be between 5 and 900 seconds")
+        if not 0.2 <= poll_seconds <= 60:
+            raise HTTPException(status_code=400, detail="Poll seconds must be between 0.2 and 60")
+
+        settings_path = Path(os.environ.get("SMI_EDGE_SETTINGS_FILE", "/srv/smi-ai/config/smi-edge-monitor.env"))
+        if os.name == "nt" and str(settings_path).startswith("/srv/"):
+            settings_path = Path("data") / "config" / "smi-edge-monitor.env"
+        settings_path.parent.mkdir(parents=True, exist_ok=True)
+        settings_path.write_text(
+            "\n".join(
+                [
+                    "# Managed by the SMI Web UI settings page.",
+                    f"SMI_MACHINE_IP={shlex.quote(machine_ip)}",
+                    f"SMI_MACHINE_PORT={machine_port}",
+                    f"SMI_MACHINE_CONNECT_TIMEOUT={machine_connect_timeout}",
+                    f"SMI_POLL_SECONDS={poll_seconds}",
+                    f"SMI_EDGE_MONITOR_ARGS={'--simulate' if use_simulate else ''}",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        event = FaultEvent(
+            datetime.now(),
+            "warning",
+            "settings",
+            "Node settings updated from Web UI",
+            "The Web UI will restart so the new settings can take effect.",
+        )
+        collector.logger.write(event)
+        store.add_event(event)
+
+        async def restart_after_response() -> None:
+            await asyncio.sleep(0.3)
+            os._exit(0)
+
+        asyncio.create_task(restart_after_response())
+        return {"status": "saved_restarting"}
+
+    @app.get("/api/tailscale")
+    async def tailscale_settings() -> dict[str, Any]:
+        return _tailscale_status()
+
+    @app.post("/api/tailscale")
+    async def set_tailscale(payload: dict[str, Any]) -> dict[str, Any]:
+        enabled = bool(payload.get("enabled"))
+        command = (
+            ["sudo", "-n", "systemctl", "enable", "--now", "tailscaled.service"]
+            if enabled
+            else ["sudo", "-n", "systemctl", "disable", "--now", "tailscaled.service"]
+        )
+        result = _run_command(command, timeout=15)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "Unable to change Tailscale state").strip()
+            raise HTTPException(status_code=500, detail=detail)
+
+        event = FaultEvent(
+            datetime.now(),
+            "warning",
+            "settings",
+            f"Tailscale {'enabled' if enabled else 'disabled'} from Web UI",
+            "Remote access availability changed.",
+        )
+        collector.logger.write(event)
+        store.add_event(event)
+        return _tailscale_status()
+
+    @app.get("/api/admin")
+    async def admin_status() -> dict[str, Any]:
+        return {
+            "terminal": {
+                "local_ssh": f"ssh user@{config.machine_ip.replace('192.168.0.1', '192.168.0.20')}",
+                "lan_ssh": "ssh user@192.168.0.20",
+                "tailscale_ssh": "ssh user@100.87.194.41",
+            },
+            "services": {
+                "node-red": _service_status("smi-node-red.service", 1880),
+                "mqtt": _service_status("mosquitto.service", 1883),
+                "webui": _service_status("smi-edge-monitor.service", 8000),
+                "tailscale": _tailscale_status(),
+                "wifi": _wifi_status(),
+            },
+        }
+
+    @app.get("/api/admin/wifi")
+    async def wifi_settings(scan: bool = False) -> dict[str, Any]:
+        return {
+            "status": _wifi_status(),
+            "networks": _wifi_scan() if scan else [],
+        }
+
+    @app.post("/api/admin/wifi")
+    async def set_wifi(payload: dict[str, Any]) -> dict[str, Any]:
+        ssid = str(payload.get("ssid", "")).strip()
+        password = str(payload.get("password", ""))
+        if not ssid:
+            raise HTTPException(status_code=400, detail="Wi-Fi SSID is required")
+        if len(ssid) > 64:
+            raise HTTPException(status_code=400, detail="Wi-Fi SSID is too long")
+        if password and len(password) < 8:
+            raise HTTPException(status_code=400, detail="Wi-Fi password must be at least 8 characters")
+
+        request_path = Path("/srv/smi-ai/config/wifi-request.env")
+        if os.name == "nt":
+            request_path = Path("data") / "config" / "wifi-request.env"
+        request_path.parent.mkdir(parents=True, exist_ok=True)
+        request_path.write_text(
+            "\n".join(
+                [
+                    f"SMI_WIFI_SSID={shlex.quote(ssid)}",
+                    f"SMI_WIFI_PASSWORD={shlex.quote(password)}",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        if os.name != "nt":
+            os.chmod(request_path, 0o600)
+
+        result = _run_command(["sudo", "-n", "/usr/local/sbin/smi-admin-control", "wifi", "apply", "on"], timeout=30)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "Wi-Fi update failed").strip()
+            raise HTTPException(status_code=500, detail=detail)
+
+        event = FaultEvent(
+            datetime.now(),
+            "warning",
+            "settings",
+            "Wi-Fi settings updated from Web UI",
+            f"The node attempted to connect to SSID {ssid}.",
+        )
+        collector.logger.write(event)
+        store.add_event(event)
+        return {"status": _wifi_status(), "networks": []}
+
+    @app.post("/api/admin/services/{service_id}")
+    async def set_admin_service(service_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        enabled = bool(payload.get("enabled"))
+        allowed = {
+            "node-red": "smi-node-red.service",
+            "mqtt": "mosquitto.service",
+            "tailscale": "tailscaled.service",
+        }
+        service = allowed.get(service_id)
+        if not service:
+            raise HTTPException(status_code=404, detail="Unknown service")
+        command = ["sudo", "-n", "/usr/local/sbin/smi-admin-control", "service", service_id, "on" if enabled else "off"]
+        result = _run_command(command, timeout=20)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "Service update failed").strip()
+            raise HTTPException(status_code=500, detail=detail)
+        return (await admin_status())["services"][service_id]
+
+    @app.post("/api/admin/lan-access/{service_id}")
+    async def set_lan_access(service_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        enabled = bool(payload.get("enabled"))
+        if service_id not in {"node-red", "mqtt"}:
+            raise HTTPException(status_code=404, detail="Unknown LAN service")
+        command = ["sudo", "-n", "/usr/local/sbin/smi-admin-control", "lan", service_id, "on" if enabled else "off"]
+        result = _run_command(command, timeout=20)
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "LAN access update failed").strip()
+            raise HTTPException(status_code=500, detail=detail)
+        return (await admin_status())["services"][service_id]
+
     @app.get("/api/config")
     async def app_config() -> dict[str, Any]:
         return {
             "machine_ip": config.machine_ip,
             "machine_port": config.machine_port,
+            "machine_connect_timeout": config.machine_connect_timeout,
             "hmi_vnc_port": config.hmi_vnc_port,
             "hmi_web_port": config.hmi_web_port,
             "poll_seconds": config.poll_seconds,
@@ -793,6 +1094,130 @@ DASHBOARD_HTML = """<!doctype html>
     .section-note {
       color: var(--muted);
       font-size: 13px;
+    }
+    .settings-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 1px 8px rgba(15, 23, 42, 0.08);
+      margin: 0 0 28px;
+      padding: 18px;
+    }
+    .settings-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(5, minmax(130px, 1fr));
+    }
+    .settings-field {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .settings-field label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+    .settings-field input,
+    .settings-field select {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font: inherit;
+      min-height: 38px;
+      padding: 7px 9px;
+    }
+    .settings-footer {
+      align-items: center;
+      display: flex;
+      gap: 12px;
+      justify-content: space-between;
+      margin-top: 14px;
+    }
+    .toggle-row {
+      align-items: center;
+      background: #f8faf9;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      display: flex;
+      gap: 14px;
+      justify-content: space-between;
+      margin-top: 16px;
+      padding: 12px;
+    }
+    .admin-panel {
+      display: none;
+      margin-top: 16px;
+    }
+    .admin-panel.open {
+      display: block;
+    }
+    .admin-grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    }
+    .admin-card {
+      background: #f8faf9;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .admin-card h3 {
+      font-size: 15px;
+      margin: 0 0 8px;
+    }
+    .admin-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .terminal-command {
+      background: #172321;
+      border-radius: 6px;
+      color: #e7f0ee;
+      display: block;
+      font-family: Consolas, Monaco, monospace;
+      font-size: 13px;
+      margin-top: 6px;
+      overflow-wrap: anywhere;
+      padding: 8px;
+    }
+    .switch {
+      display: inline-flex;
+      position: relative;
+    }
+    .switch input {
+      opacity: 0;
+      position: absolute;
+    }
+    .slider {
+      background: #94a3b8;
+      border-radius: 999px;
+      cursor: pointer;
+      display: inline-block;
+      height: 28px;
+      position: relative;
+      width: 52px;
+    }
+    .slider::before {
+      background: white;
+      border-radius: 50%;
+      content: "";
+      height: 22px;
+      left: 3px;
+      position: absolute;
+      top: 3px;
+      transition: transform 0.15s ease;
+      width: 22px;
+    }
+    .switch input:checked + .slider {
+      background: var(--accent);
+    }
+    .switch input:checked + .slider::before {
+      transform: translateX(24px);
     }
     button {
       appearance: none;
@@ -1062,6 +1487,9 @@ DASHBOARD_HTML = """<!doctype html>
       .status { white-space: normal; }
       .section-header { align-items: flex-start; flex-direction: column; }
       .section-actions { width: 100%; justify-content: space-between; }
+      .settings-grid { grid-template-columns: 1fr; }
+      .settings-footer { align-items: stretch; flex-direction: column; }
+      .toggle-row { align-items: flex-start; flex-direction: column; }
       .value { font-size: 24px; }
       th, td { font-size: 13px; padding: 8px; }
       .viewer, .viewer iframe { min-height: 360px; height: 360px; }
@@ -1147,6 +1575,107 @@ DASHBOARD_HTML = """<!doctype html>
         <tbody id="snapshots"><tr><td colspan="4" class="muted">No snapshots yet</td></tr></tbody>
       </table>
     </div>
+    <div class="section-header">
+      <h2 class="section-title">Settings</h2>
+      <div class="section-note">Saved changes restart the Web UI service</div>
+    </div>
+    <section class="settings-panel">
+      <form id="settings-form">
+        <div class="settings-grid">
+          <div class="settings-field">
+            <label for="settings-machine-ip">Machine IP</label>
+            <input id="settings-machine-ip" name="machine_ip" autocomplete="off" inputmode="decimal">
+          </div>
+          <div class="settings-field">
+            <label for="settings-machine-port">Modbus port</label>
+            <input id="settings-machine-port" name="machine_port" type="number" min="1" max="65535">
+          </div>
+          <div class="settings-field">
+            <label for="settings-timeout">Connect timeout</label>
+            <input id="settings-timeout" name="machine_connect_timeout" type="number" min="5" max="900">
+          </div>
+          <div class="settings-field">
+            <label for="settings-poll">Poll seconds</label>
+            <input id="settings-poll" name="poll_seconds" type="number" min="0.2" max="60" step="0.1">
+          </div>
+          <div class="settings-field">
+            <label for="settings-mode">Machine mode</label>
+            <select id="settings-mode" name="simulate">
+              <option value="false">Live Modbus</option>
+              <option value="true">Simulated</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-footer">
+          <div id="settings-message" class="section-note">Current node settings</div>
+          <div class="admin-actions">
+            <button id="admin-toggle" class="secondary" type="button">Admin</button>
+            <button id="settings-save" type="submit">Save Settings</button>
+          </div>
+        </div>
+      </form>
+      <div class="toggle-row">
+        <div>
+          <div class="summary-title">Tailscale Remote Access</div>
+          <div id="tailscale-meta" class="summary-meta">Checking Tailscale status</div>
+        </div>
+        <label class="switch" title="Turn Tailscale service on or off">
+          <input id="tailscale-toggle" type="checkbox">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div id="admin-panel" class="admin-panel">
+        <div class="section-note">Controlled admin tools. Node-RED and MQTT stay localhost-only unless LAN access is opened here.</div>
+        <div class="admin-grid">
+          <article class="admin-card">
+            <h3>Node Terminal</h3>
+            <div class="summary-meta">Use SSH for terminal access.</div>
+            <code id="terminal-lan-command" class="terminal-command">ssh user@192.168.0.20</code>
+            <code id="terminal-ts-command" class="terminal-command">ssh user@100.87.194.41</code>
+          </article>
+          <article class="admin-card">
+            <h3>Node-RED</h3>
+            <div id="node-red-meta" class="summary-meta">Checking status</div>
+            <div class="admin-actions">
+              <button type="button" data-service="node-red" data-action="service">Toggle Service</button>
+              <button type="button" data-service="node-red" data-action="lan">Toggle LAN Port</button>
+            </div>
+          </article>
+          <article class="admin-card">
+            <h3>MQTT Broker</h3>
+            <div id="mqtt-meta" class="summary-meta">Checking status</div>
+            <div class="admin-actions">
+              <button type="button" data-service="mqtt" data-action="service">Toggle Service</button>
+              <button type="button" data-service="mqtt" data-action="lan">Toggle LAN Port</button>
+            </div>
+          </article>
+          <article class="admin-card">
+            <h3>Tailscale</h3>
+            <div id="admin-tailscale-meta" class="summary-meta">Checking status</div>
+            <div class="admin-actions">
+              <button type="button" data-service="tailscale" data-action="service">Toggle Service</button>
+            </div>
+          </article>
+          <article class="admin-card">
+            <h3>Wi-Fi</h3>
+            <div id="wifi-meta" class="summary-meta">Checking Wi-Fi status</div>
+            <div class="settings-field">
+              <label for="wifi-ssid">SSID</label>
+              <input id="wifi-ssid" autocomplete="off">
+            </div>
+            <div class="settings-field">
+              <label for="wifi-password">Password</label>
+              <input id="wifi-password" type="password" autocomplete="new-password" placeholder="Leave blank to keep open network">
+            </div>
+            <div class="admin-actions">
+              <button id="wifi-scan" type="button">Scan</button>
+              <button id="wifi-save" type="button">Save Wi-Fi</button>
+            </div>
+            <div id="wifi-networks" class="summary-meta"></div>
+          </article>
+        </div>
+      </div>
+    </section>
   </main>
   <div class="shutdown-dock">
     <button id="shutdown-button" class="shutdown-button" type="button">Shutdown Node</button>
@@ -1182,6 +1711,29 @@ DASHBOARD_HTML = """<!doctype html>
     const shutdownModal = document.getElementById("shutdown-modal");
     const cancelShutdown = document.getElementById("cancel-shutdown");
     const confirmShutdown = document.getElementById("confirm-shutdown");
+    const settingsForm = document.getElementById("settings-form");
+    const settingsSave = document.getElementById("settings-save");
+    const settingsMessage = document.getElementById("settings-message");
+    const settingsMachineIp = document.getElementById("settings-machine-ip");
+    const settingsMachinePort = document.getElementById("settings-machine-port");
+    const settingsTimeout = document.getElementById("settings-timeout");
+    const settingsPoll = document.getElementById("settings-poll");
+    const settingsMode = document.getElementById("settings-mode");
+    const tailscaleToggle = document.getElementById("tailscale-toggle");
+    const tailscaleMeta = document.getElementById("tailscale-meta");
+    const adminToggle = document.getElementById("admin-toggle");
+    const adminPanel = document.getElementById("admin-panel");
+    const terminalLanCommand = document.getElementById("terminal-lan-command");
+    const terminalTsCommand = document.getElementById("terminal-ts-command");
+    const nodeRedMeta = document.getElementById("node-red-meta");
+    const mqttMeta = document.getElementById("mqtt-meta");
+    const adminTailscaleMeta = document.getElementById("admin-tailscale-meta");
+    const wifiMeta = document.getElementById("wifi-meta");
+    const wifiSsid = document.getElementById("wifi-ssid");
+    const wifiPassword = document.getElementById("wifi-password");
+    const wifiScan = document.getElementById("wifi-scan");
+    const wifiSave = document.getElementById("wifi-save");
+    const wifiNetworks = document.getElementById("wifi-networks");
     let hmiLoaded = false;
     let showAllSnapshots = false;
     let renderedCameraKey = "";
@@ -1204,24 +1756,24 @@ DASHBOARD_HTML = """<!doctype html>
     function renderCards(sample) {
       const values = sample?.values || {};
       const entries = orderedCardEntries(values);
-      cards.innerHTML = entries.length
-        ? entries.map(([name, value]) => `
-          ${name === "lot_number" ? `
-            <button class="card-button fault centered" type="button" data-action="mark-manual-fault" aria-label="Mark manual fault">
-              <div class="value">FAULT</div>
-            </button>
-          ` : name === "package_count" ? `
-            <button class="card-button bad-packs centered" type="button" data-action="capture-bad-packs" aria-label="Capture bad pack camera snapshot">
-              <div class="value">BAD PACK(S)</div>
-            </button>
-          ` : `
-            <article class="card">
-              <div class="label">${formatName(name)}</div>
-              <div class="value">${value}</div>
-            </article>
-          `}
-        `).join("")
-        : `<article class="card"><div class="label">Waiting for data</div><div class="value">--</div></article>`;
+      const dataCards = entries
+        .filter(([name]) => name !== "lot_number" && name !== "package_count")
+        .map(([name, value]) => `
+          <article class="card">
+            <div class="label">${formatName(name)}</div>
+            <div class="value">${value}</div>
+          </article>
+        `);
+      cards.innerHTML = [
+        ...dataCards,
+        `<button class="card-button fault centered" type="button" data-action="mark-manual-fault" aria-label="Mark manual fault">
+          <div class="value">FAULT</div>
+        </button>`,
+        `<button class="card-button bad-packs centered" type="button" data-action="capture-bad-packs" aria-label="Capture bad pack camera snapshot">
+          <div class="value">BAD PACK(S)</div>
+        </button>`,
+        ...(entries.length ? [] : [`<article class="card"><div class="label">Waiting for data</div><div class="value">--</div></article>`]),
+      ].join("");
     }
 
     function renderStatus(payload) {
@@ -1235,6 +1787,47 @@ DASHBOARD_HTML = """<!doctype html>
       if (error) {
         cards.insertAdjacentHTML("beforeend", `<article class="card"><div class="label">Last error</div><div class="value error">${error}</div></article>`);
       }
+    }
+
+    function renderSettings(settings) {
+      settingsMachineIp.value = settings.machine_ip || "192.168.0.1";
+      settingsMachinePort.value = settings.machine_port ?? 502;
+      settingsTimeout.value = settings.machine_connect_timeout ?? 120;
+      settingsPoll.value = settings.poll_seconds ?? 2;
+      settingsMode.value = settings.simulate ? "true" : "false";
+      settingsMessage.textContent = settings.settings_path ? `Saved at ${settings.settings_path}` : "Current node settings";
+    }
+
+    function renderTailscale(tailscale) {
+      tailscaleToggle.checked = !!tailscale.active;
+      const state = tailscale.active ? "On" : "Off";
+      const boot = tailscale.enabled ? "starts on boot" : "does not start on boot";
+      const ip = tailscale.ip || "no 100.x address";
+      const backend = tailscale.backend_state ? ` - ${tailscale.backend_state}` : "";
+      tailscaleMeta.textContent = `${state} - ${boot} - ${ip}${backend}`;
+      adminTailscaleMeta.textContent = tailscaleMeta.textContent;
+      terminalTsCommand.textContent = `ssh user@${tailscale.ip || "100.87.194.41"}`;
+    }
+
+    function renderAdmin(admin) {
+      terminalLanCommand.textContent = admin.terminal?.lan_ssh || "ssh user@192.168.0.20";
+      terminalTsCommand.textContent = admin.terminal?.tailscale_ssh || terminalTsCommand.textContent;
+      const nodeRed = admin.services?.["node-red"] || {};
+      const mqtt = admin.services?.mqtt || {};
+      const tailscale = admin.services?.tailscale || {};
+      const wifi = admin.services?.wifi || {};
+      nodeRedMeta.textContent = `${nodeRed.active ? "Running" : "Stopped"} - ${nodeRed.enabled ? "boot on" : "boot off"} - ${nodeRed.lan_open ? "LAN open" : "localhost only"} - port ${nodeRed.port || 1880}`;
+      mqttMeta.textContent = `${mqtt.active ? "Running" : "Stopped"} - ${mqtt.enabled ? "boot on" : "boot off"} - ${mqtt.lan_open ? "LAN open" : "localhost only"} - port ${mqtt.port || 1883}`;
+      adminTailscaleMeta.textContent = `${tailscale.active ? "Running" : "Stopped"} - ${tailscale.enabled ? "boot on" : "boot off"} - ${tailscale.ip || "no 100.x address"}`;
+      wifiMeta.textContent = `${wifi.connected ? "Connected" : "Disconnected"} - ${wifi.ssid || "no SSID"} - ${wifi.ip || "no IP"}${wifi.signal ? ` - ${wifi.signal}` : ""}`;
+      if (!wifiSsid.value && wifi.ssid) {
+        wifiSsid.value = wifi.ssid;
+      }
+    }
+
+    async function refreshAdmin() {
+      const response = await fetch("/api/admin");
+      renderAdmin(await response.json());
     }
 
     function renderSampleSummary(sample) {
@@ -1464,15 +2057,144 @@ DASHBOARD_HTML = """<!doctype html>
       }
     }
 
+    async function saveSettings(event) {
+      event.preventDefault();
+      settingsSave.disabled = true;
+      settingsMessage.textContent = "Saving settings...";
+      const payload = {
+        machine_ip: settingsMachineIp.value.trim(),
+        machine_port: Number(settingsMachinePort.value),
+        machine_connect_timeout: Number(settingsTimeout.value),
+        poll_seconds: Number(settingsPoll.value),
+        simulate: settingsMode.value === "true",
+      };
+
+      try {
+        const response = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: "Settings save failed" }));
+          throw new Error(error.detail || "Settings save failed");
+        }
+        settingsMessage.textContent = "Settings saved. Web UI is restarting...";
+        setTimeout(refresh, 5000);
+      } catch (error) {
+        settingsMessage.textContent = error.message;
+        settingsSave.disabled = false;
+      }
+    }
+
+    async function setTailscale() {
+      tailscaleToggle.disabled = true;
+      tailscaleMeta.textContent = tailscaleToggle.checked ? "Turning Tailscale on..." : "Turning Tailscale off...";
+      try {
+        const response = await fetch("/api/tailscale", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: tailscaleToggle.checked }),
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: "Tailscale update failed" }));
+          throw new Error(error.detail || "Tailscale update failed");
+        }
+        renderTailscale(await response.json());
+      } catch (error) {
+        tailscaleMeta.textContent = error.message;
+        tailscaleToggle.checked = !tailscaleToggle.checked;
+      } finally {
+        tailscaleToggle.disabled = false;
+      }
+    }
+
+    async function adminAction(event) {
+      const button = event.target.closest("button[data-service][data-action]");
+      if (!button) return;
+      button.disabled = true;
+      const service = button.dataset.service;
+      const action = button.dataset.action;
+      const meta = service === "node-red" ? nodeRedMeta : service === "mqtt" ? mqttMeta : adminTailscaleMeta;
+      const currentText = meta.textContent;
+      const currentlyOn = action === "lan" ? currentText.includes("LAN open") : currentText.includes("Running");
+      meta.textContent = "Updating...";
+      try {
+        const url = action === "lan" ? `/api/admin/lan-access/${service}` : `/api/admin/services/${service}`;
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: !currentlyOn }),
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: "Admin update failed" }));
+          throw new Error(error.detail || "Admin update failed");
+        }
+        await refreshAdmin();
+      } catch (error) {
+        meta.textContent = error.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function scanWifi() {
+      wifiScan.disabled = true;
+      wifiNetworks.textContent = "Scanning...";
+      try {
+        const response = await fetch("/api/admin/wifi?scan=true");
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: "Wi-Fi scan failed" }));
+          throw new Error(error.detail || "Wi-Fi scan failed");
+        }
+        const payload = await response.json();
+        renderAdmin({ services: { wifi: payload.status } });
+        wifiNetworks.innerHTML = payload.networks.length
+          ? payload.networks.map(network => `<button class="secondary" type="button" data-ssid="${network.ssid}">${network.ssid}${network.signal ? ` (${network.signal})` : ""}</button>`).join(" ")
+          : "No networks found";
+      } catch (error) {
+        wifiNetworks.textContent = error.message;
+      } finally {
+        wifiScan.disabled = false;
+      }
+    }
+
+    async function saveWifi() {
+      wifiSave.disabled = true;
+      wifiMeta.textContent = "Saving Wi-Fi settings...";
+      try {
+        const response = await fetch("/api/admin/wifi", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ssid: wifiSsid.value.trim(), password: wifiPassword.value }),
+        });
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({ detail: "Wi-Fi save failed" }));
+          throw new Error(error.detail || "Wi-Fi save failed");
+        }
+        const payload = await response.json();
+        renderAdmin({ services: { wifi: payload.status } });
+        wifiPassword.value = "";
+        wifiNetworks.textContent = "Wi-Fi settings applied.";
+      } catch (error) {
+        wifiMeta.textContent = error.message;
+      } finally {
+        wifiSave.disabled = false;
+      }
+    }
+
     async function refresh() {
       try {
-        const [currentResponse, eventsResponse, configResponse, snapshotsResponse, camerasResponse, recordingsResponse] = await Promise.all([
+        const [currentResponse, eventsResponse, configResponse, snapshotsResponse, camerasResponse, recordingsResponse, settingsResponse, tailscaleResponse, adminResponse] = await Promise.all([
           fetch("/api/current"),
           fetch("/api/events"),
           fetch("/api/config"),
           fetch("/api/snapshots"),
           fetch("/api/cameras"),
-          fetch("/api/recordings?limit=12")
+          fetch("/api/recordings?limit=12"),
+          fetch("/api/settings"),
+          fetch("/api/tailscale"),
+          fetch("/api/admin")
         ]);
         const current = await currentResponse.json();
         const events = await eventsResponse.json();
@@ -1480,6 +2202,9 @@ DASHBOARD_HTML = """<!doctype html>
         const snapshots = await snapshotsResponse.json();
         const cameras = await camerasResponse.json();
         const recordings = await recordingsResponse.json();
+        const settings = await settingsResponse.json();
+        const tailscale = await tailscaleResponse.json();
+        const admin = await adminResponse.json();
         renderCards(current.sample);
         renderStatus(current);
         renderSampleSummary(current.sample);
@@ -1488,6 +2213,10 @@ DASHBOARD_HTML = """<!doctype html>
         renderSnapshots(snapshots);
         renderCameras(cameras);
         renderRecordings(recordings);
+        renderSettings(settings);
+        renderTailscale(tailscale);
+        renderAdmin(admin);
+        settingsSave.disabled = false;
       } catch (error) {
         status.className = "status";
         status.innerHTML = `<span class="dot"></span><span>Dashboard error</span>`;
@@ -1505,6 +2234,20 @@ DASHBOARD_HTML = """<!doctype html>
       }
     });
     confirmShutdown.addEventListener("click", requestNodeShutdown);
+    settingsForm.addEventListener("submit", saveSettings);
+    tailscaleToggle.addEventListener("change", setTailscale);
+    adminToggle.addEventListener("click", () => {
+      adminPanel.classList.toggle("open");
+    });
+    adminPanel.addEventListener("click", adminAction);
+    wifiScan.addEventListener("click", scanWifi);
+    wifiSave.addEventListener("click", saveWifi);
+    wifiNetworks.addEventListener("click", event => {
+      const button = event.target.closest("button[data-ssid]");
+      if (button) {
+        wifiSsid.value = button.dataset.ssid;
+      }
+    });
     document.addEventListener("keydown", event => {
       if (event.key === "Escape" && shutdownModal.classList.contains("open")) {
         closeShutdownModal();

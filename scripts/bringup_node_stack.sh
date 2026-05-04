@@ -9,6 +9,9 @@ DATA_ROOT="${SMI_AI_DATA_ROOT:-/srv/smi-ai}"
 WEB_HOST="${SMI_WEB_HOST:-0.0.0.0}"
 WEB_PORT="${SMI_WEB_PORT:-8000}"
 WEB_URL="${SMI_WEB_URL:-http://127.0.0.1:${WEB_PORT}}"
+MACHINE_HOST="${SMI_MACHINE_IP:-192.168.0.1}"
+MACHINE_PORT="${SMI_MACHINE_PORT:-502}"
+MACHINE_CONNECT_TIMEOUT="${SMI_MACHINE_CONNECT_TIMEOUT:-120}"
 START_RECORDING=1
 START_HMI_VIEWER=0
 SIMULATE=0
@@ -29,6 +32,9 @@ Options:
   --hmi-viewer            Also start the noVNC HMI web viewer
   --no-recording          Test cameras but do not start rotating recording
   --web-port PORT         Web UI port, default: 8000
+  --machine-host HOST     Machine IP, default: 192.168.0.1
+  --machine-port PORT     Machine Modbus TCP port, default: 502
+  --machine-timeout SEC   Seconds to wait for machine connection, default: 120
   --env-file PATH         Camera env file, default: /srv/smi-ai/config/cameras.env
   -h, --help              Show this help
 
@@ -67,6 +73,20 @@ while [[ $# -gt 0 ]]; do
     --web-port)
       WEB_PORT="${2:?Missing value for --web-port}"
       WEB_URL="http://127.0.0.1:${WEB_PORT}"
+      shift 2
+      ;;
+    --machine-host)
+      MACHINE_HOST="${2:?Missing value for --machine-host}"
+      export SMI_MACHINE_IP="${MACHINE_HOST}"
+      shift 2
+      ;;
+    --machine-port)
+      MACHINE_PORT="${2:?Missing value for --machine-port}"
+      export SMI_MACHINE_PORT="${MACHINE_PORT}"
+      shift 2
+      ;;
+    --machine-timeout)
+      MACHINE_CONNECT_TIMEOUT="${2:?Missing value for --machine-timeout}"
       shift 2
       ;;
     --env-file)
@@ -109,6 +129,32 @@ port_is_open() {
   local host="$1"
   local port="$2"
   timeout 2 bash -c "cat < /dev/null > /dev/tcp/${host}/${port}" >/dev/null 2>&1
+}
+
+wait_for_machine_connection() {
+  if [[ "${SIMULATE}" -eq 1 ]]; then
+    log "Simulated mode enabled; skipping machine connection wait."
+    return
+  fi
+
+  local deadline=$((SECONDS + MACHINE_CONNECT_TIMEOUT))
+  local next_notice="${SECONDS}"
+
+  log "Waiting up to ${MACHINE_CONNECT_TIMEOUT}s for machine ${MACHINE_HOST}:${MACHINE_PORT}"
+  until port_is_open "${MACHINE_HOST}" "${MACHINE_PORT}"; do
+    if [[ "${SECONDS}" -ge "${deadline}" ]]; then
+      warn "Machine ${MACHINE_HOST}:${MACHINE_PORT} did not connect within ${MACHINE_CONNECT_TIMEOUT}s. Check Ethernet, machine power, IP settings, and Modbus port."
+      return 1
+    fi
+
+    if [[ "${SECONDS}" -ge "${next_notice}" ]]; then
+      log "Machine not reachable yet at ${MACHINE_HOST}:${MACHINE_PORT}; still waiting."
+      next_notice=$((SECONDS + 15))
+    fi
+    sleep 2
+  done
+
+  log "Machine connection verified at ${MACHINE_HOST}:${MACHINE_PORT}"
 }
 
 start_web_ui() {
@@ -159,16 +205,18 @@ check_machine_collector() {
   local payload
   payload="$(curl -fsS "${WEB_URL}/api/current")" || fail "Could not read web API current status"
 
-  if ! PAYLOAD="${payload}" python3 - <<'PY'
+  if ! PAYLOAD="${payload}" EXPECT_SIMULATED="${SIMULATE}" python3 - <<'PY'
 import json
 import os
 import sys
 
 payload = json.loads(os.environ["PAYLOAD"])
+expect_simulated = os.environ.get("EXPECT_SIMULATED") == "1"
 status = payload.get("status", {})
 sample = payload.get("sample")
+source = status.get("source")
 
-print(f"Machine source: {status.get('source')}")
+print(f"Machine source: {source}")
 print(f"Machine connected: {status.get('connected')}")
 print(f"Last update: {status.get('last_update')}")
 if status.get("last_error"):
@@ -177,12 +225,17 @@ if status.get("last_error"):
 if not status.get("connected") or sample is None:
     sys.exit(3)
 
+if not expect_simulated and source != "modbus":
+    print("Machine is not using live Modbus data.")
+    sys.exit(3)
+
 values = sample.get("values", {})
 print(f"Machine registers read: {len(values)}")
 if values:
     preview = ", ".join(f"{key}={value}" for key, value in list(values.items())[:6])
     print(f"Latest values: {preview}")
 PY
+  then
     warn "Web UI is up, but machine data is not connected yet. Check Modbus network/HMI reachability."
     return
   fi
@@ -282,6 +335,7 @@ main() {
   start_web_ui
   start_hmi_viewer
   wait_for_web_api
+  wait_for_machine_connection || true
   check_machine_collector
   check_cameras
 
