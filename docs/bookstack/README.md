@@ -19,6 +19,13 @@ Secrets such as passwords, camera credentials, and BookStack API tokens must not
 5. [Operations and Security](05-operations-and-security/)
 6. [Vendor Manuals and Machine Reference](06-vendor-manuals-and-machine-reference/)
 
+BookStack also has a generated `Searchable PDF Library` chapter. It is built from the local PDFs with:
+
+```bash
+python scripts/build_bookstack_pdf_library.py
+python scripts/upload_bookstack_pdf_library.py
+```
+
 ## Active Mapping Template
 
 - [Machine Parts and Sensor Map](03-machine-data-and-faults/03-machine-map-template.md)

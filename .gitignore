@@ -27,6 +27,7 @@ hardware_captures/*
 
 # Local imports/staging
 _incoming_zip/
+build/
 
 # Editors and OS files
 .vscode/

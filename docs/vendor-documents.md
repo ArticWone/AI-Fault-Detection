@@ -156,3 +156,12 @@ Project relevance:
 - First half of the electrical wiring diagrams.
 - Useful for tracing sensors, terminal blocks, relays, contactors, safety circuits, and I/O modules into the machine parts and sensor map.
 - This PDF is image-only, so searchable notes are maintained in BookStack until OCR is added.
+
+## BookStack Searchable Library
+
+The PDFs are imported into BookStack in two ways:
+
+- As attachments on the matching summary pages in `Vendor Manuals and Machine Reference`.
+- As extracted searchable text pages in the generated `Searchable PDF Library` chapter.
+
+The wiring diagram scan is image-only. Its current library pages are sheet placeholders with searchable labels and trace tables; full diagram text will require OCR or manual trace notes.
