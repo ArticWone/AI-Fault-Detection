@@ -142,3 +142,17 @@ Project relevance:
 
 - Documents the optional bottom-loading external reel-holder.
 - Identifies reel-holder components, tensioning bar sensor, reel end photocell, and motor references including `50.SQ.4`, `51.B`, and `32.M.1`.
+
+## SMIPACK Wiring Diagrams - Part 1 Scan
+
+- Local file: `docs/vendor-documents/smipack/SMIPACK_wiring_diagrams_part_1_scan.pdf`
+- Drive title: `[Untitled].pdf`
+- Uploaded: `2026-05-04`
+- Pages: `26`
+- BookStack page: `Wiring Diagrams - Part 1 Scan Index`
+
+Project relevance:
+
+- First half of the electrical wiring diagrams.
+- Useful for tracing sensors, terminal blocks, relays, contactors, safety circuits, and I/O modules into the machine parts and sensor map.
+- This PDF is image-only, so searchable notes are maintained in BookStack until OCR is added.

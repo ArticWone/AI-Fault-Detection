@@ -29,6 +29,7 @@ This book was generated from the repository documentation and current node state
 - SMIPACK BP802ALV 600R use and maintenance manual.
 - SMIPACK Industry 4.0 Ethernet and Modbus manual.
 - SMIPACK external reel-holder manual.
+- SMIPACK wiring diagrams part 1 scan.
 
 ## Repository
 
