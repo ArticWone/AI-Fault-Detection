@@ -26,6 +26,9 @@ This book was generated from the repository documentation and current node state
 - Smitec FLXMOD TCP A3 thermocouple module.
 - Smitec FLXMOD PWR 02 power module.
 - Smitec FLXMOD CVO A2 analog output module.
+- SMIPACK BP802ALV 600R use and maintenance manual.
+- SMIPACK Industry 4.0 Ethernet and Modbus manual.
+- SMIPACK external reel-holder manual.
 
 ## Repository
 

@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+"""Sync searchable vendor manual notes into the local BookStack instance."""
+
+from __future__ import annotations
+
+import json
+import os
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+
+BASE_URL = os.environ.get("BOOKSTACK_BASE_URL", "http://127.0.0.1:6875/api")
+ENV_PATH = Path(os.environ.get("BOOKSTACK_ENV", "/srv/smi-ai/config/bookstack-api.env"))
+BOOK_NAME = "SMI Machine Documentation"
+CHAPTER_NAME = "Vendor Manuals and Machine Reference"
+
+
+PAGES = [
+    {
+        "name": "SMIPACK BP802ALV 600R Manual - Search Index",
+        "markdown": """# SMIPACK BP802ALV 600R Manual - Search Index
+
+Source PDF: `DM211643-S_B_EN_BP802ALV_600R_use-maintenance.pdf`
+
+Manual code: `DM211643_S`
+
+Machine: `BP802ALV 600R`
+
+Description: Automatic overlap shrinkwrapper with in-line infeed.
+
+## High-Value Search Terms
+
+- BP802ALV 600R
+- automatic overlap shrinkwrapper
+- in-line infeed
+- sealing bar
+- film reel
+- upper unwinder
+- lower unwinder
+- chain separator
+- oven belt
+- emergency door open
+- bar safety
+- film finishing
+- film finished
+- no pressure
+- oven obstruction
+- B11 obstruction
+- B12 obstruction
+- SQ13 problem
+- inverter error
+- I/O bus error
+
+## Machine Areas To Map
+
+| Area | Manual reference | Map use |
+| --- | --- | --- |
+| Infeed belt | Machine components and setup | Product entry and flow detection |
+| Chain separator | Operation, alarms, inverter references | Pack spacing and obstruction faults |
+| Sealing bar | Safety devices, maintenance, bar movement faults | Seal cycle, bar safety, sensor mapping |
+| Film reels and unwinders | Film setup and film alarms | Film feed, reel end, tensioning |
+| Oven / thermal chamber | Operation and temperature faults | Heat shrink, oven belt, PT100/temperature checks |
+| Operator panel | Operation and alarms | HMI state, VNC view, operator prompts |
+
+## Safety Devices And Sensors Mentioned
+
+- Door magnetic sensors.
+- Sealing bar sensors.
+- Emergency mushroom button.
+- Safety relay circuits.
+- Tensioning bar sensors.
+- Outfeed accumulation photocell.
+- Obstruction photocell.
+- Pressure switch.
+- Oven temperature probe.
+- Inverter/driver status signals.
+
+## Alarm/Fault Phrases To Correlate
+
+| Alarm phrase | Useful mapping target |
+| --- | --- |
+| `EMERGENCY DOOR OPEN` | Door interlocks and safety relay |
+| `BAR SAFETY` | Sealing bar safety sensors and obstruction area |
+| `FILM FINISHING` | Reel-end monitoring and film reserve |
+| `FILM FINISHED` | Tensioning bar and reel-end sensors |
+| `BAR MOVEMENT PROBLEM` | Bar position sensors, air pressure, solenoid valves |
+| `OVEN OBSTRUCTION` | Outfeed/oven photocell timing |
+| `CHAIN SEPARATOR OBSTRUCTION` | B11 sensor and chain separator path |
+| `B12 OBSTRUCTION` | Sensor B12 near sealing bar |
+| `NO PRESSURE` | Pneumatic supply and pressure switch |
+| `ERROR I/O BUS 0` / `ERROR I/O BUS 1` | FLXIO module communication |
+
+## Mapping Notes
+
+Use this manual while filling in the machine parts and sensor map. Treat every physical sensor row as `candidate` until verified by both physical tracing and read-only data changes.
+""",
+    },
+    {
+        "name": "Industry 4.0 Ethernet and Modbus Settings",
+        "markdown": """# Industry 4.0 Ethernet and Modbus Settings
+
+Source PDF: `DM200289_D_Industry_4_0_Ethernet_Modbus.pdf`
+
+Manual code: `DM200289`
+
+Revision: `D2`
+
+## Purpose
+
+This document describes Ethernet access between the machine/operator panel and a PC, including VNC access and Modbus register interaction.
+
+## Machine Network Settings
+
+| Setting | Value used for this project |
+| --- | --- |
+| Machine/HMI IP | `192.168.0.1` |
+| Subnet mask | `255.255.255.0` |
+| Node machine-side IP | `192.168.0.20` |
+| Modbus TCP port | `502` |
+| VNC port | `5900` |
+
+The manual points to the operator panel menu:
+
+`Utility -> Network`
+
+Use a static IP when possible so the machine address does not change after restart.
+
+## VNC Access
+
+The manual describes using UltraVNC Viewer to connect to the machine IP.
+
+Project use:
+
+- The Web UI shows the HMI/VNC display.
+- Keep VNC access limited to the machine-side/internal network.
+- Avoid exposing VNC directly through Tailscale or broad LAN rules unless explicitly approved.
+
+## Modbus Registers From Manual
+
+| Register | Manual meaning | Current project use |
+| --- | --- | --- |
+| `13300` | Format currently in use | Read current format |
+| `10142` | Set/requested format | Read or controlled write only with approval |
+| `10112` | Production lot ID | Read lot number |
+| `10161` | Number of packages to be wrapped | Read package count / count target candidate |
+
+## Write Safety
+
+The manual includes write examples for `10142`, `10112`, and `10161`.
+
+Project rule:
+
+- Use read-only Modbus checks while mapping.
+- Do not write registers or request format changes unless the machine owner approves the exact action.
+- Any future write control must require an operator confirmation step and be logged.
+
+## Search Terms
+
+- Industry 4.0
+- Ethernet interface
+- operator panel
+- touch-screen ARM
+- VNC
+- UltraVNC
+- Modbus TCP
+- Ananas
+- register 13300
+- register 10142
+- register 10112
+- register 10161
+""",
+    },
+    {
+        "name": "External Reel-Holder Settings and Sensors",
+        "markdown": """# External Reel-Holder Settings and Sensors
+
+Source PDF: `DM200178_A_EN_external_reel_holder.pdf`
+
+Manual code: `DM200178`
+
+Revision: `A`
+
+## Purpose
+
+This manual covers the optional external reel-holder for bottom film loading.
+
+## Main Components
+
+| Manual item | Component |
+| --- | --- |
+| `1` | Reel-holder |
+| `2` | Tensioning bar unit |
+| `3` | Upper film return unit |
+| `4` | Reel-holder motor |
+| `5` | Tensioning bar sensor |
+| `6` | Reel end photocell, when present |
+
+## Electrical / Sensor References
+
+| Label | Manual meaning | Mapping use |
+| --- | --- | --- |
+| `50.SQ.4` | Photocell for reel end control, if included | Film finished / reel end candidate |
+| `51.B` | Sensor used to unwind film reel | Film feed / tensioning candidate |
+| `32.M.1` | Reel-holder gearmotor | External reel-holder motor |
+
+## Setup Notes
+
+- The reel-holder can be installed on the left side or right side of the shrinkwrapper.
+- Removed sheet metal guards must be reinstalled before use.
+- Gearmotor rotation must match the direction shown in the manual.
+- Film reel stops should leave a small clearance so film can drag correctly.
+- Counterweights are only added if film unwinding has difficulty.
+
+## Hazard Areas
+
+| Zone | Risk |
+| --- | --- |
+| Zone A | Crushing risk during reel loading |
+| Zone B | Entanglement/crushing risk around tensioning bars during film unwinding |
+
+## Search Terms
+
+- external reel-holder
+- bottom loading
+- tensioning bar
+- reel-holder motor
+- reel end photocell
+- 50.SQ.4
+- 51.B
+- 32.M.1
+- upper film return unit
+- film unwinding
+""",
+    },
+]
+
+
+def read_env(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def request(method: str, path: str, token: str, payload: dict | None = None) -> dict:
+    data = None
+    headers = {"Authorization": f"Token {token}", "Accept": "application/json"}
+    if payload is not None:
+        data = json.dumps(payload).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(f"{BASE_URL}{path}", data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=30) as response:
+            body = response.read()
+            return json.loads(body.decode("utf-8")) if body else {}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"{method} {path} failed: {exc.code} {body}") from exc
+
+
+def find_book(token: str) -> dict:
+    data = request("GET", "/books", token)
+    for book in data.get("data", []):
+        if book.get("name") == BOOK_NAME:
+            return book
+    raise RuntimeError(f"Book not found: {BOOK_NAME}")
+
+
+def get_book_detail(token: str, book_id: int) -> dict:
+    return request("GET", f"/books/{book_id}", token)
+
+
+def find_chapter(book_detail: dict) -> dict | None:
+    for item in book_detail.get("contents", []):
+        if item.get("type") == "chapter" and item.get("name") == CHAPTER_NAME:
+            return item
+    return None
+
+
+def create_chapter(token: str, book_id: int) -> dict:
+    return request(
+        "POST",
+        "/chapters",
+        token,
+        {
+            "book_id": book_id,
+            "name": CHAPTER_NAME,
+            "description": "Searchable vendor manual notes, settings, and machine reference pages.",
+        },
+    )
+
+
+def find_page(token: str, page_name: str) -> dict | None:
+    data = request("GET", "/pages", token)
+    for page in data.get("data", []):
+        if page.get("name") == page_name:
+            return page
+    return None
+
+
+def upsert_page(token: str, book_id: int, chapter_id: int, page: dict) -> str:
+    existing = find_page(token, page["name"])
+    payload = {
+        "book_id": book_id,
+        "chapter_id": chapter_id,
+        "name": page["name"],
+        "markdown": page["markdown"],
+    }
+    if existing:
+        request("PUT", f"/pages/{existing['id']}", token, payload)
+        return f"updated page {existing['id']}: {page['name']}"
+    created = request("POST", "/pages", token, payload)
+    return f"created page {created.get('id')}: {page['name']}"
+
+
+def main() -> None:
+    env = read_env(ENV_PATH)
+    token_id = env["BOOKSTACK_TOKEN_ID"]
+    token_secret = env["BOOKSTACK_TOKEN_SECRET"]
+    token = f"{token_id}:{token_secret}"
+    book = find_book(token)
+    book_id = int(book["id"])
+    detail = get_book_detail(token, book_id)
+    chapter = find_chapter(detail) or create_chapter(token, book_id)
+    chapter_id = int(chapter["id"])
+    print(f"book {book_id}: {BOOK_NAME}")
+    print(f"chapter {chapter_id}: {CHAPTER_NAME}")
+    for page in PAGES:
+        print(upsert_page(token, book_id, chapter_id, page))
+
+
+if __name__ == "__main__":
+    main()

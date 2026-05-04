@@ -17,6 +17,7 @@ Secrets such as passwords, camera credentials, and BookStack API tokens must not
 3. [Machine Data and Faults](03-machine-data-and-faults/)
 4. [Camera, AI, and IoT](04-camera-ai-and-iot/)
 5. [Operations and Security](05-operations-and-security/)
+6. [Vendor Manuals and Machine Reference](06-vendor-manuals-and-machine-reference/)
 
 ## Active Mapping Template
 

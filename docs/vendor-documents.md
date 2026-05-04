@@ -101,3 +101,44 @@ Project relevance:
 - Documents a Smitec FLXMOD analog output module with two software-configurable outputs.
 - Confirms `0-10 V` or `4-20 mA` output ranges, `12 bit` resolution, insulated front-end circuitry, and `FLXIO` bus interface.
 - Useful for understanding possible analog command hardware in the machine cabinet.
+
+## SMIPACK BP802ALV 600R Use And Maintenance Manual
+
+- Local file: `docs/vendor-documents/smipack/DM211643-S_B_EN_BP802ALV_600R_use-maintenance.pdf`
+- Drive title: `DM211643-S_B_EN (1).pdf`
+- Manual code: `DM211643_S`
+- Revision: `B`
+- Machine: `BP802ALV 600R`
+- BookStack page: `SMIPACK BP802ALV 600R Manual - Search Index`
+
+Project relevance:
+
+- Main machine manual for the automatic overlap shrinkwrapper with in-line infeed.
+- Useful for tracing machine areas, safety devices, sealing bar faults, film faults, obstruction faults, and maintenance references.
+
+## SMIPACK Industry 4.0 Ethernet And Modbus Manual
+
+- Local file: `docs/vendor-documents/smipack/DM200289_D_Industry_4_0_Ethernet_Modbus.pdf`
+- Drive title: `DM200289_D_Industry 4.0_EN (1).pdf`
+- Manual code: `DM200289`
+- Revision: `D2`
+- BookStack page: `Industry 4.0 Ethernet and Modbus Settings`
+
+Project relevance:
+
+- Confirms Ethernet/VNC access flow for the HMI/operator panel.
+- Documents key Modbus registers `13300`, `10142`, `10112`, and `10161`.
+- Supports the node settings for machine IP `192.168.0.1`, Modbus TCP port `502`, and VNC port `5900`.
+
+## SMIPACK External Reel-Holder Manual
+
+- Local file: `docs/vendor-documents/smipack/DM200178_A_EN_external_reel_holder.pdf`
+- Drive title: `DM200178_A_EN (1).pdf`
+- Manual code: `DM200178`
+- Revision: `A`
+- BookStack page: `External Reel-Holder Settings and Sensors`
+
+Project relevance:
+
+- Documents the optional bottom-loading external reel-holder.
+- Identifies reel-holder components, tensioning bar sensor, reel end photocell, and motor references including `50.SQ.4`, `51.B`, and `32.M.1`.
