@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import mimetypes
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -14,6 +15,7 @@ BASE_URL = os.environ.get("BOOKSTACK_BASE_URL", "http://127.0.0.1:6875/api")
 ENV_PATH = Path(os.environ.get("BOOKSTACK_ENV", "/srv/smi-ai/config/bookstack-api.env"))
 BOOK_NAME = "SMI Machine Documentation"
 CHAPTER_NAME = "Vendor Manuals and Machine Reference"
+ATTACHMENT_DIR = Path(os.environ.get("BOOKSTACK_ATTACHMENT_DIR", "docs/vendor-documents/smipack"))
 
 
 PAGES = [
@@ -337,6 +339,42 @@ def request(method: str, path: str, token: str, payload: dict | None = None) -> 
         raise RuntimeError(f"{method} {path} failed: {exc.code} {body}") from exc
 
 
+def multipart_request(method: str, path: str, token: str, fields: dict[str, str], file_path: Path) -> dict:
+    boundary = "----smi-bookstack-boundary"
+    parts: list[bytes] = []
+    for key, value in fields.items():
+        parts.append(f"--{boundary}\r\n".encode("utf-8"))
+        parts.append(f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode("utf-8"))
+        parts.append(str(value).encode("utf-8"))
+        parts.append(b"\r\n")
+
+    mime_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+    parts.append(f"--{boundary}\r\n".encode("utf-8"))
+    parts.append(
+        (
+            f'Content-Disposition: form-data; name="file"; filename="{file_path.name}"\r\n'
+            f"Content-Type: {mime_type}\r\n\r\n"
+        ).encode("utf-8")
+    )
+    parts.append(file_path.read_bytes())
+    parts.append(b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode("utf-8"))
+
+    headers = {
+        "Authorization": f"Token {token}",
+        "Accept": "application/json",
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+    }
+    req = urllib.request.Request(f"{BASE_URL}{path}", data=b"".join(parts), headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=120) as response:
+            body = response.read()
+            return json.loads(body.decode("utf-8")) if body else {}
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"{method} {path} failed: {exc.code} {body}") from exc
+
+
 def find_book(token: str) -> dict:
     data = request("GET", "/books", token)
     for book in data.get("data", []):
@@ -377,6 +415,11 @@ def find_page(token: str, page_name: str) -> dict | None:
     return None
 
 
+def list_attachments(token: str) -> list[dict]:
+    data = request("GET", "/attachments", token)
+    return data.get("data", [])
+
+
 def upsert_page(token: str, book_id: int, chapter_id: int, page: dict) -> str:
     existing = find_page(token, page["name"])
     payload = {
@@ -390,6 +433,30 @@ def upsert_page(token: str, book_id: int, chapter_id: int, page: dict) -> str:
         return f"updated page {existing['id']}: {page['name']}"
     created = request("POST", "/pages", token, payload)
     return f"created page {created.get('id')}: {page['name']}"
+
+
+def attach_file_to_page(token: str, page_name: str, file_name: str, attachment_name: str) -> str:
+    page = find_page(token, page_name)
+    if not page:
+        raise RuntimeError(f"Page not found for attachment: {page_name}")
+    page_id = int(page["id"])
+    existing = list_attachments(token)
+    for attachment in existing:
+        attached_to = attachment.get("uploaded_to") or attachment.get("page_id")
+        if attachment.get("name") == attachment_name and int(attached_to or 0) == page_id:
+            return f"attachment already present on page {page_id}: {attachment_name}"
+
+    file_path = ATTACHMENT_DIR / file_name
+    if not file_path.exists():
+        return f"attachment file missing, skipped: {file_path}"
+    created = multipart_request(
+        "POST",
+        "/attachments",
+        token,
+        {"name": attachment_name, "uploaded_to": str(page_id)},
+        file_path,
+    )
+    return f"created attachment {created.get('id')} on page {page_id}: {attachment_name}"
 
 
 def main() -> None:
@@ -406,6 +473,30 @@ def main() -> None:
     print(f"chapter {chapter_id}: {CHAPTER_NAME}")
     for page in PAGES:
         print(upsert_page(token, book_id, chapter_id, page))
+    attachments = [
+        (
+            "SMIPACK BP802ALV 600R Manual - Search Index",
+            "DM211643-S_B_EN_BP802ALV_600R_use-maintenance.pdf",
+            "SMIPACK BP802ALV 600R Use and Maintenance Manual.pdf",
+        ),
+        (
+            "Industry 4.0 Ethernet and Modbus Settings",
+            "DM200289_D_Industry_4_0_Ethernet_Modbus.pdf",
+            "SMIPACK Industry 4.0 Ethernet and Modbus Manual.pdf",
+        ),
+        (
+            "External Reel-Holder Settings and Sensors",
+            "DM200178_A_EN_external_reel_holder.pdf",
+            "SMIPACK External Reel-Holder Manual.pdf",
+        ),
+        (
+            "Wiring Diagrams - Part 1 Scan Index",
+            "SMIPACK_wiring_diagrams_part_1_scan.pdf",
+            "SMIPACK Wiring Diagrams Part 1 Scan.pdf",
+        ),
+    ]
+    for page_name, file_name, attachment_name in attachments:
+        print(attach_file_to_page(token, page_name, file_name, attachment_name))
 
 
 if __name__ == "__main__":
