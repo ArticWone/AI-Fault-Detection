@@ -27,6 +27,12 @@ The edge monitor is a basic web app for the M715q thin client.
 - `/api/snapshots`: saved HMI snapshots
 - `/api/config`: machine/web viewer settings
 
+## Network Exposure
+
+The dashboard runs on port `8000`. For test and shop-floor use, the node may allow this port from LAN and Tailscale. Before putting the node on a live internal network, keep UFW enabled, prefer Tailscale for remote access, and add web UI authentication before broad LAN exposure.
+
+See the Tailscale firewall reference in [Ubuntu Server First Boot](ubuntu-server-first-boot.md#tailscale-and-firewall-baseline).
+
 ## Test With Simulated Data
 
 ```bash
@@ -46,6 +52,14 @@ bash scripts/start_edge_monitor.sh
 ```
 
 The Modbus target comes from `app/config.py`.
+
+For the normal node startup path, prefer the full bring-up script:
+
+```bash
+bash scripts/bringup_node_stack.sh
+```
+
+It starts the web UI if needed, checks `/api/current`, verifies that machine samples are coming in, writes event logs under `/srv/smi-ai/data/events.csv` by default, tests configured IP cameras, and starts/validates rotating recording.
 
 ## HMI Viewer
 

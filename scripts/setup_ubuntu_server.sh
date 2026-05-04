@@ -112,6 +112,7 @@ systemctl enable --now ssh
 echo "==> Creating runtime directories at ${DATA_ROOT}"
 install -d -m 775 -o "${PROJECT_USER}" -g "${PROJECT_USER}" \
   "${DATA_ROOT}" \
+  "${DATA_ROOT}/config" \
   "${DATA_ROOT}/data" \
   "${DATA_ROOT}/hmi_snapshots" \
   "${DATA_ROOT}/logs" \

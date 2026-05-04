@@ -8,6 +8,15 @@ env/
 # Runtime data
 data/
 *.log
+*.zip
+_node_update_bundle/
+
+# Local camera credentials
+config/cameras.env
+
+# Local downloaded vendor/firmware packages and evidence captures
+downloads/
+evidence_bar_safety_timing_2026-04-29/
 
 # Local hardware captures may include MAC addresses, UUIDs, license IDs, or serials
 hardware_captures/*
@@ -24,3 +33,13 @@ _incoming_zip/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Android build output
+android/**/.gradle/
+android/**/build/
+android/**/*.iml
+android/*.png
+android/*.jpg
+android/*.jpeg
+android/*.zip
+android/apk-share/

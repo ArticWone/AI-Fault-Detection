@@ -7,6 +7,7 @@ SIMULATE=0
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PYTHON="${REPO_DIR}/.venv/bin/python"
+ENV_FILE="${SMI_CAMERA_ENV:-/srv/smi-ai/config/cameras.env}"
 
 usage() {
   cat <<'EOF'
@@ -56,4 +57,10 @@ if [[ "${SIMULATE}" -eq 1 ]]; then
 fi
 
 cd "${REPO_DIR}"
+if [[ -f "${ENV_FILE}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "${ENV_FILE}"
+  set +a
+fi
 exec "${PYTHON}" -m edge_monitor.server "${ARGS[@]}"

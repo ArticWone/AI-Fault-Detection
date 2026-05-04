@@ -146,3 +146,82 @@ The SMIPACK machine was previously found at:
 - VNC: port `5900`
 
 Keep machine-network routing simple. If this PC also has internet access, use a separate interface for internet when possible.
+
+## Tailscale And Firewall Baseline
+
+References:
+
+- [Tailscale firewall compatibility and workarounds](https://tailscale.com/docs/integrations/firewalls#firewall-compatibility-and-workarounds)
+- [Tailscale firewall ports FAQ](https://tailscale.com/docs/reference/faq/firewall-ports)
+
+Tailscale usually works through normal firewalls by using NAT traversal, with DERP relay fallback when direct peer-to-peer traffic cannot be established. For this node, keep UFW enabled and only expose the services that are needed.
+
+Baseline policy:
+
+```bash
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+```
+
+Allow remote support and app services from Tailscale:
+
+```bash
+sudo ufw allow in on tailscale0 to any port 22 proto tcp
+sudo ufw allow in on tailscale0 to any port 8000 proto tcp
+sudo ufw allow in on tailscale0 to any port 1984 proto tcp
+sudo ufw allow in on tailscale0 to any port 8554 proto tcp
+sudo ufw allow in on tailscale0 to any port 8555
+sudo ufw allow in on tailscale0 to any port 6080 proto tcp
+```
+
+Port purpose:
+
+- `22/tcp`: SSH
+- `8000/tcp`: SMI web UI
+- `1984/tcp`: go2rtc web/API
+- `8554/tcp`: RTSP restream
+- `8555/tcp` and `8555/udp`: WebRTC
+- `6080/tcp`: noVNC HMI viewer
+
+The live LAN should not expose every service. Current setup intentionally allows the SMI web UI on the shop Wi-Fi/LAN so phones can reach the dashboard:
+
+```bash
+sudo ufw allow in on wlx6c4cbce74d9c to any port 8000 proto tcp
+sudo ufw allow in on enp2s0f0 to any port 8000 proto tcp
+```
+
+Before the node goes onto a production network, add web UI authentication or limit this to Tailscale only.
+
+If an upstream firewall is strict, ask IT for these outbound rules from the node:
+
+- allow TCP outbound to `*:443`
+- allow UDP outbound from source port `41641` to `*:*`
+- allow UDP outbound to `*:3478`
+- optional: allow TCP outbound to `*:80` for faster startup and captive-portal checks
+
+If IT requires destination allowlisting instead of open outbound rules, prefer Tailscale domain rules over hardcoded IPs. At minimum, allow:
+
+- `login.tailscale.com`
+- `controlplane.tailscale.com`
+- `log.tailscale.com`
+- `console.tailscale.com`
+- DERP relay hosts such as `derp1-all.tailscale.com` through the current DERP list
+
+Opening inbound UDP `41641` to the node can improve direct peer-to-peer connections when both sides are behind difficult firewalls, but it is optional. Tailscale can still fall back to DERP relay over TCP `443`; that may be slower but should still work.
+
+The setup hotspot uses the Wi-Fi adapter only when normal Wi-Fi is unavailable:
+
+```bash
+sudo ufw allow in on wlx6c4cbce74d9c to any port 80 proto tcp
+sudo ufw allow in on wlx6c4cbce74d9c to any port 8080 proto tcp
+sudo ufw allow in on wlx6c4cbce74d9c to any port 53
+sudo ufw allow in on wlx6c4cbce74d9c to any port 67 proto udp
+```
+
+Verify after any firewall change:
+
+```bash
+sudo ufw enable
+sudo ufw status verbose
+tailscale status
+```

@@ -29,6 +29,14 @@ https://github.com/ArticWone/AI-Fault-Detection
 Known faults, symptoms, fixes we tried, and fixes that worked are tracked in:
 `docs/known-faults-and-fixes.md`
 
+## Vendor Documents
+Collected vendor/OEM documents are tracked in:
+`docs/vendor-documents.md`
+
+## System Handoff
+Current node services, network layout, Tailscale/firewall needs, storage paths, and live-network notes are tracked in:
+`docs/system-overview-and-network-handoff.md`
+
 ## Key Findings
 - Machine: SMIPACK BP802ALV
 - Supports Ethernet connection

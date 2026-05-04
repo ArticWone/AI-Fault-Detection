@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="smi_bg">#EEF2F3</color>
+    <color name="smi_panel">#FFFFFF</color>
+    <color name="smi_ink">#172321</color>
+    <color name="smi_muted">#66736F</color>
+    <color name="smi_accent">#1E6B7D</color>
+</resources>
