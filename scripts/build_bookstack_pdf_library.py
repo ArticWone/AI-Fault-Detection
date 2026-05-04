@@ -109,7 +109,29 @@ def clean_text(text: str) -> str:
 
 
 def markdown_safe_text(text: str) -> str:
-    return text.replace("\r\n", "\n").replace("\r", "\n")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return format_numbered_headings(text)
+
+
+def format_numbered_headings(text: str) -> str:
+    """Turn extracted manual section numbers into readable Markdown headings."""
+    formatted = []
+    top_level = re.compile(r"^(\d{1,2})\s+-\s+(.+?)(?:\s+(\d{1,3}))?$")
+    nested = re.compile(r"^(\d{1,2}(?:\.\d+){1,3})\s+(.+?)(?:\s+(\d{1,3}))?$")
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        match = top_level.match(stripped) or nested.match(stripped)
+        if match:
+            number, title, page = match.groups()
+            title = re.sub(r"\s+", " ", title).strip()
+            if len(title) >= 3 and not title.lower().startswith(("fig.", "tab.")):
+                level = min(3 + number.count("."), 6)
+                suffix = f" _(page {page})_" if page else ""
+                formatted.append(f"{'#' * level} {number} {title}{suffix}")
+                continue
+        formatted.append(line)
+    return "\n".join(formatted)
 
 
 def split_page_chunks(total_pages: int, chunk_size: int) -> list[tuple[int, int]]:
