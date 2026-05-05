@@ -31,6 +31,7 @@ def clean_text(text: str) -> str:
     text = text.replace("\x00", " ")
     text = re.sub(r"\.{4,}", " ", text)
     text = re.sub(r"(?:\s*\.\s*){3,}", " ", text)
+    text = re.sub(r"(?m)^\s*-{3,}\s*$", "", text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r" *\n *", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
@@ -69,6 +70,26 @@ def format_numbered_headings(text: str) -> str:
     return "\n".join(formatted)
 
 
+def normalize_heading(line: str) -> str:
+    line = re.sub(r"^#+\s*", "", line).strip()
+    line = re.sub(r"\s+", " ", line)
+    return line.casefold()
+
+
+def remove_page_chrome(text: str, page_num: int, section_name: str) -> str:
+    """Remove repeated PDF page headers, footers, and page numbers."""
+    section_heading = normalize_heading(section_name)
+    cleaned = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == str(page_num):
+            continue
+        if normalize_heading(stripped) == section_heading:
+            continue
+        cleaned.append(line)
+    return "\n".join(cleaned).strip()
+
+
 def section_for_page(page_num: int) -> tuple[str, str]:
     current = SECTION_STARTS[0]
     for section in SECTION_STARTS:
@@ -101,6 +122,7 @@ def build(pdf_dir: Path) -> dict:
         raw = reader.pages[page_num - 1].extract_text() or ""
         text = format_numbered_headings(clean_text(raw))
         current_key, current_name = section_for_page(page_num)
+        text = remove_page_chrome(text, page_num, current_name)
         chapter = chapters.setdefault(
             current_key,
             {
@@ -131,6 +153,7 @@ def build_grouped(pdf_dir: Path) -> dict:
         raw = reader.pages[page_num - 1].extract_text() or ""
         text = format_numbered_headings(clean_text(raw))
         current_key, current_name = section_for_page(page_num)
+        text = remove_page_chrome(text, page_num, current_name)
         section = pages_by_section.setdefault(
             current_key,
             {
@@ -154,7 +177,7 @@ def build_grouped(pdf_dir: Path) -> dict:
                     f"Source PDF: `{MANUAL_FILE}`\n\n"
                     f"Source PDF pages: `{source_pages[0]}-{source_pages[-1]}`\n\n"
                     "This grouped page keeps the whole manual chapter together for easier reading and searching.\n\n"
-                    + "\n\n---\n\n".join(section["body"])
+                    + "\n\n".join(section["body"])
                 ),
             }
         )

@@ -72,8 +72,27 @@ def find_or_create_chapter(auth: str, book_id: int, chapter: dict, existing: dic
     return request("POST", "/chapters", auth, payload)
 
 
+def all_pages(auth: str) -> list[dict]:
+    pages: list[dict] = []
+    offset = 0
+    count = 500
+    while True:
+        response = request("GET", f"/pages?count={count}&offset={offset}", auth)
+        batch = response.get("data", [])
+        pages.extend(batch)
+        if len(batch) < count:
+            break
+        offset += count
+    return pages
+
+
 def page_index(auth: str) -> dict[str, dict]:
-    return {page["name"]: page for page in request("GET", "/pages", auth).get("data", [])}
+    pages_by_name: dict[str, dict] = {}
+    for page in all_pages(auth):
+        name = page["name"]
+        if name not in pages_by_name or int(page["id"]) > int(pages_by_name[name]["id"]):
+            pages_by_name[name] = page
+    return pages_by_name
 
 
 def upsert_page(auth: str, book_id: int, chapter_id: int, page: dict, existing_pages: dict[str, dict]) -> str:
