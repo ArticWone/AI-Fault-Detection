@@ -123,13 +123,61 @@ def build(pdf_dir: Path) -> dict:
     return {"chapters": list(chapters.values())}
 
 
+def build_grouped(pdf_dir: Path) -> dict:
+    reader = PdfReader(str(pdf_dir / MANUAL_FILE))
+    pages_by_section: dict[str, dict] = {}
+
+    for page_num in range(7, len(reader.pages) + 1):
+        raw = reader.pages[page_num - 1].extract_text() or ""
+        text = format_numbered_headings(clean_text(raw))
+        current_key, current_name = section_for_page(page_num)
+        section = pages_by_section.setdefault(
+            current_key,
+            {
+                "name": current_name,
+                "source_pages": [],
+                "body": [],
+            },
+        )
+        section["source_pages"].append(page_num)
+        section["body"].append(f"<!-- Source PDF page {page_num} -->\n\n{text}")
+
+    grouped_pages = []
+    for key in sorted(pages_by_section):
+        section = pages_by_section[key]
+        source_pages = section["source_pages"]
+        grouped_pages.append(
+            {
+                "name": f"BP802ALV {section['name']}",
+                "markdown": (
+                    f"# BP802ALV {section['name']}\n\n"
+                    f"Source PDF: `{MANUAL_FILE}`\n\n"
+                    f"Source PDF pages: `{source_pages[0]}-{source_pages[-1]}`\n\n"
+                    "This grouped page keeps the whole manual chapter together for easier reading and searching.\n\n"
+                    + "\n\n---\n\n".join(section["body"])
+                ),
+            }
+        )
+
+    return {
+        "chapters": [
+            {
+                "name": "BP802ALV Clean Manual - Grouped",
+                "description": "One BookStack page per top-level BP802ALV manual chapter.",
+                "pages": grouped_pages,
+            }
+        ]
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pdf-dir", default="docs/vendor-documents/smipack")
     parser.add_argument("--out", default="build/bookstack_bp802alv_chapters.json")
+    parser.add_argument("--grouped", action="store_true", help="Build one BookStack page per top-level manual chapter")
     args = parser.parse_args()
 
-    payload = build(Path(args.pdf_dir))
+    payload = build_grouped(Path(args.pdf_dir)) if args.grouped else build(Path(args.pdf_dir))
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
