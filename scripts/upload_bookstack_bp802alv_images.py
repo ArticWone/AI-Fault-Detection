@@ -159,7 +159,7 @@ def insert_images(markdown: str, image_markdown: dict[int, str]) -> str:
     markdown = strip_existing_page_images(markdown)
     for page_num, image in image_markdown.items():
         marker = f"<!-- Source PDF page {page_num} -->"
-        markdown = markdown.replace(marker, f"{marker}\n\n{image}", 1)
+        markdown = markdown.replace(marker, image, 1)
     return markdown
 
 
